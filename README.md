@@ -13,9 +13,9 @@ Each bird has a position, velocity, and turning momentum in three dimensions. Yo
 The flock follows local rules:
 
 1. **Leave room.** A bird moves away from its closest neighbors when they come within 30 world units. This spacing accounts for birds occupying a volume rather than a flat plane.
-2. **Pass turns along.** A spatial grid finds the seven closest birds within 120 units in 3D. Nearby birds exchange equal and opposite turning forces. Each bird retains its own angular momentum, so a bend can travel through the flock instead of rotating everyone together.
+2. **Pass turns along.** A spatial grid finds the seven closest birds within 120 units in 3D. Nearby birds exchange equal and opposite turning forces. Each bird retains its own angular momentum, so a bend can travel through the flock instead of rotating everyone together. Turn sharing is slightly stronger than before; the tendency to agree on a heading is unchanged.
 3. **Stay with the nearby flock.** Birds within 300 units attract one another, with influence fading to zero at that distance. Most of the attraction along a bird's own forward direction is removed: it mainly steers the bird, with some speed adjustment to catch up. This reduces the tendency to brake the front and accelerate the back into a compact ball.
-4. **React to the intruder.** Mouse velocity extends the arrow's danger zone up to 0.2 seconds ahead, with a distance cap. Birds are repelled from the nearest point on that predicted path, through the entire depth of the flock. No left/right side or number of streams is assigned. Holding the pointer increases avoidance.
+4. **React to the intruder.** Mouse velocity extends the arrow's danger zone up to 0.2 seconds ahead, with a distance cap. Birds are repelled from the nearest point on that predicted path, through the entire depth of the flock. The strongest push and extra acceleration allowance are softened so a close encounter produces less abrupt scattering. No left/right side or number of streams is assigned. Holding the pointer increases avoidance.
 5. **Fly with inertia.** Acceleration eases toward its target. Turning momentum is damped, while small independent fluctuations allow local variation. Self-propulsion maintains a cruising speed; a head-on threat can slow a bird down.
 6. **See the boundaries ahead.** Birds anticipate the screen edges and the front/back of the depth volume. Close to a boundary, outward velocity eases down; a final guard keeps every position inside. There is no prescribed circuit around the screen.
 
@@ -80,7 +80,7 @@ Run the regression checks with:
 node --test tests/*.cjs
 ```
 
-The checks cover exact 3D neighbors and attraction against exhaustive calculations, fixed-step timing at different refresh rates, local influence, mouse anticipation, finite screen/depth bounds, continuous history, delayed turn propagation, and worker transfer/timing behavior. The turn experiment uses a localized 17-degree heading change in an approximately 900-unit-long group at uncompressed personal spacing, and checks that the response arrives later farther away without losing its strength. Visual comparison is still required to judge resemblance.
+The checks cover exact 3D neighbors and attraction against exhaustive calculations, fixed-step timing at different refresh rates, local influence, mouse anticipation, smooth avoidance falloff and release, finite screen/depth bounds, continuous history, delayed turn propagation, and worker transfer/timing behavior. The turn experiment uses a localized 17-degree heading change in an approximately 900-unit-long group at uncompressed personal spacing, and checks that the response arrives later farther away without losing its strength. Visual comparison is still required to judge resemblance.
 
 ## References
 

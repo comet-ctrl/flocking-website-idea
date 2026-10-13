@@ -126,9 +126,11 @@ class Flock{
   for(let i=0;i<n;i++){const p=b[i],s=Math.hypot(p.vx,p.vy,p.vz)||1;this.speeds[i]=s;this.unitX[i]=p.vx/s;this.unitY[i]=p.vy/s;this.unitZ[i]=p.vz/s}
   for(let e=0;e<this.edgeCount;e++){
    const i=this.edgeA[e],j=this.edgeB[e],p=b[i],q=b[j],weight=this.edgeWeight[e];
-   const x=(this.unitY[i]*this.unitZ[j]-this.unitZ[i]*this.unitY[j])*.008+(q.ox-p.ox)*.08;
-   const y=(this.unitZ[i]*this.unitX[j]-this.unitX[i]*this.unitZ[j])*.008+(q.oy-p.oy)*.08;
-   const z=(this.unitX[i]*this.unitY[j]-this.unitY[i]*this.unitX[j])*.008+(q.oz-p.oz)*.08;
+   // Share changes in turning a little more strongly than heading itself.
+   // Bends stay local and can travel without locking the whole flock together.
+   const x=(this.unitY[i]*this.unitZ[j]-this.unitZ[i]*this.unitY[j])*.008+(q.ox-p.ox)*.10;
+   const y=(this.unitZ[i]*this.unitX[j]-this.unitX[i]*this.unitZ[j])*.008+(q.oy-p.oy)*.10;
+   const z=(this.unitX[i]*this.unitY[j]-this.unitY[i]*this.unitX[j])*.008+(q.oz-p.oz)*.10;
    tx[i]+=x*weight;tx[j]-=x*weight;ty[i]+=y*weight;ty[j]-=y*weight;tz[i]+=z*weight;tz[j]-=z*weight;
   }
   const radius=Math.min(this.w,this.h)*.15*(intruder.down?1.3:1),inset=this.edgeInset;
@@ -145,10 +147,10 @@ class Flock{
    // neighboring lobes connected without selecting a flock shape or path.
    let cohesionX=p.cohesionX*.00018,cohesionY=p.cohesionY*.00018,cohesionZ=p.cohesionZ*.00018;
    // Turn toward local companions without strongly braking the front into
-   // the tail. A quarter of the longitudinal response remains for catch-up.
+   // the tail. A modest longitudinal response lets trailing birds catch up.
    const speedSquared=p.vx*p.vx+p.vy*p.vy+p.vz*p.vz;
    if(speedSquared>1e-9){
-    const along=(cohesionX*p.vx+cohesionY*p.vy+cohesionZ*p.vz)/speedSquared*.75;
+    const along=(cohesionX*p.vx+cohesionY*p.vy+cohesionZ*p.vz)/speedSquared*.70;
     cohesionX-=p.vx*along;cohesionY-=p.vy*along;cohesionZ-=p.vz*along;
    }
    ax+=cohesionX;ay+=cohesionY;az+=cohesionZ;
@@ -156,7 +158,8 @@ class Flock{
    if(intruder.active){
     const ox=p.x-intruder.x,oy=p.y-intruder.y,along=leadSquared>1?clamp((ox*leadX+oy*leadY)/leadSquared,0,1):0;
     const dx=ox-leadX*along,dy=oy-leadY*along,d=Math.hypot(dx,dy);alarm=clamp(1-d/radius,0,1);
-    if(d>1e-8){const push=smooth(alarm)*(intruder.down?.29:.22);ax+=dx/d*push;ay+=dy/d*push}
+    // The same predicted danger zone, with less violent near-arrow impulses.
+    if(d>1e-8){const push=smooth(alarm)*(intruder.down?.20:.15);ax+=dx/d*push;ay+=dy/d*push}
    }
    // Soft physical enclosure, including a depth slab. It has no camera,
    // periodic space, or prescribed circuit. The inset guard is only a backstop.
@@ -167,7 +170,7 @@ class Flock{
    const front=smooth(1-(p.z+p.vz*18-5)/45),back=smooth(1-(this.depth-5-p.z-p.vz*18)/45);
    az+=(front-back)*.055;
    const drive=(2.1-speed)*.035;ax+=this.unitX[i]*drive;ay+=this.unitY[i]*drive;az+=this.unitZ[i]*drive;
-   const force=Math.hypot(ax,ay,az),scale=Math.min(1,(.07+alarm*.16)/(force||1));ax*=scale;ay*=scale;az*=scale;
+   const force=Math.hypot(ax,ay,az),scale=Math.min(1,(.07+alarm*.10)/(force||1));ax*=scale;ay*=scale;az*=scale;
    const response=1-Math.exp(-dt*10);p.ax+=(ax-p.ax)*response;p.ay+=(ay-p.ay)*response;p.az+=(az-p.az)*response;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wx+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wx*.03;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wy+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wy*.03;
