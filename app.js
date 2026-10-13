@@ -1,15 +1,21 @@
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 const bloom=document.createElement('canvas'),bloomCtx=bloom.getContext('2d');
+const backdrop=document.createElement('canvas'),backdropCtx=backdrop.getContext('2d',{alpha:false});
 let w=innerWidth,h=innerHeight,dpr=1,particles=[],paused=false,last=0,time=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
 const pace=2.2;
-let flock,background,poses,tones,visualDepth,frozenScene,tail=[];
+let flock,poses,wakes,tones,toneGroups,visualDepth,renderSources,renderLag,renderOffset,frozenScene,tail=[];
+const bodyColors=Array.from({length:4},(_,band)=>`rgba(211,228,243,${.38+band*.14})`);
+const tipColors=['rgba(240,246,251,.48)','rgba(255,251,247,.76)'];
 function resize(){
- w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);
+ w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2,Math.sqrt(4000000/(w*h)));
  canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
- background=ctx.createRadialGradient(w*.48,h*.47,0,w*.48,h*.47,Math.max(w,h)*.67);
- background.addColorStop(0,'#10151d');background.addColorStop(.55,'#0b1016');background.addColorStop(1,'#05080b');
+ // Cache the atmosphere once; never regenerate a screen-sized gradient per frame.
+ backdrop.width=canvas.width;backdrop.height=canvas.height;backdropCtx.setTransform(dpr,0,0,dpr,0,0);
+ const background=backdropCtx.createRadialGradient(w*.48,h*.47,0,w*.48,h*.47,Math.max(w,h)*.67);
+ background.addColorStop(0,'#101923');background.addColorStop(.55,'#0a1018');background.addColorStop(1,'#04070b');
+ backdropCtx.fillStyle=background;backdropCtx.fillRect(0,0,w,h);
  // A quarter-resolution light layer gives a soft halo without per-bird blur.
  bloom.width=Math.ceil(w/4);bloom.height=Math.ceil(h/4);bloomCtx.setTransform(bloom.width/w,0,0,bloom.height/h,0,0);
  mouse.x=Math.max(0,Math.min(w,mouse.x));mouse.y=Math.max(0,Math.min(h,mouse.y));mouse.tx=Math.max(0,Math.min(w,mouse.tx));mouse.ty=Math.max(0,Math.min(h,mouse.ty));
@@ -17,8 +23,24 @@ function resize(){
 }
 function seed(){
  flock?.destroy();flock=new FlockRunner(w,h,Math.min(2200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;
- poses=new Float32Array(particles.length*6);tones=Uint8Array.from(particles,p=>Math.min(3,Math.floor((p.a-.36)*8)));tail=[];
- visualDepth=Float32Array.from(particles,p=>p.z/flock.depth);
+ // Extra visual birds sample existing flight histories; physics and its random
+ // sequence stay untouched. Small varied offsets keep the silver marks distinct.
+ const count=particles.length+Math.floor(particles.length/2);
+ poses=new Float32Array(count*6);wakes=new Float32Array(count*2);tones=new Uint8Array(count);
+ renderSources=new Uint32Array(count);renderLag=new Float32Array(count);renderOffset=new Float32Array(count);visualDepth=new Float32Array(count);
+ for(let n=0;n<count;n++){
+  const extra=n>=particles.length,source=extra?(n-particles.length)*2:n,p=particles[source];
+  renderSources[n]=source;visualDepth[n]=p.z/flock.depth;
+  tones[n]=Math.min(3,Math.floor((p.a-.36)*8));
+  if(extra){
+   const variation=((Math.imul(source+1,2654435761)>>>0)/4294967296);
+   renderLag[n]=.8+variation*1.6;renderOffset[n]=(source%4===0?1:-1)*(3+variation*3);
+   tones[n]=(tones[n]+1)%4;
+  }
+ }
+ tail=[];
+ // Stable brightness groups avoid scanning the full flock for every stroke band.
+ toneGroups=Array.from({length:4},()=>[]);for(let n=0;n<count;n++)toneGroups[tones[n]].push(n);
  frozenScene=paused?captureScene():null;
 }
 // A pending worker reply must not move the flock while paused.
@@ -33,46 +55,50 @@ window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
 
 function drawBirds(dt){
  const particles=frozenScene?.birds||flock.birds,age=frozenScene?.age??flock.renderAgeTicks,depthScale=frozenScene?.depth??flock.depth;
- const i=Math.floor(age),j=Math.min(15,i+1),mix=age-i;
- const k=Math.min(14,i),l=Math.min(14,j),alpha=1-Math.min(1,age);
+ const alpha=1-Math.min(1,age),wakeTicks=.038*60*pace;
  const depthGain=dt?1-Math.exp(-dt*8):1;
  // Calculate each pose once, then reuse it in a few batched drawing passes.
- for(let n=0;n<particles.length;n++){
-  const p=particles[n],a=p.history,b=n*6;
-  const x=a[i*2]+(a[j*2]-a[i*2])*mix,y=a[i*2+1]+(a[j*2+1]-a[i*2+1])*mix;
+ for(let n=0;n<renderSources.length;n++){
+  const p=particles[renderSources[n]],a=p.history,b=n*6,sampleAge=Math.min(14,age+renderLag[n]);
+  const i=Math.floor(sampleAge),j=Math.min(15,i+1),mix=sampleAge-i,k=Math.min(14,i),l=Math.min(14,j);
+  let x=a[i*2]+(a[j*2]-a[i*2])*mix,y=a[i*2+1]+(a[j*2+1]-a[i*2+1])*mix;
   let vx=(a[k*2]-a[k*2+2])*(1-mix)+(a[l*2]-a[l*2+2])*mix,vy=(a[k*2+1]-a[k*2+3])*(1-mix)+(a[l*2+1]-a[l*2+3])*mix;
   if(Math.hypot(vx,vy)<.001){vx=p.vx;vy=p.vy}
   const speed=Math.hypot(vx,vy)||1,depth=(p.pz+(p.z-p.pz)*alpha)/depthScale;
   visualDepth[n]+=(Math.max(0,Math.min(1,depth))-visualDepth[n])*depthGain;
-  const length=(2.2+speed*2.05)*(.86+p.size*.32)*(.88+depth*.24),dx=vx/speed*length,dy=vy/speed*length;
+  const offset=renderOffset[n],ox=-vy/speed*offset,oy=vx/speed*offset;
+  x=Math.max(2,Math.min(w-2,x+ox));y=Math.max(2,Math.min(h-2,y+oy));
+  const length=(2.2+speed*1.65)*(.86+p.size*.32)*(.82+visualDepth[n]*.36),dx=vx/speed*length,dy=vy/speed*length;
   poses[b]=x;poses[b+1]=y;poses[b+2]=x-dx;poses[b+3]=y-dy;poses[b+4]=x-dx*.34;poses[b+5]=y-dy*.34;
+  const tailAge=Math.min(15,sampleAge+wakeTicks),ti=Math.floor(tailAge),tj=Math.min(15,ti+1),tm=tailAge-ti;
+  wakes[n*2]=Math.max(2,Math.min(w-2,a[ti*2]+(a[tj*2]-a[ti*2])*tm+ox));
+  wakes[n*2+1]=Math.max(2,Math.min(h-2,a[ti*2+1]+(a[tj*2+1]-a[ti*2+1])*tm+oy));
  }
  bloomCtx.clearRect(0,0,w,h);bloomCtx.beginPath();bloomCtx.lineCap='round';
  for(let b=0;b<poses.length;b+=6){bloomCtx.moveTo(poses[b],poses[b+1]);bloomCtx.lineTo(poses[b+2],poses[b+3])}
- bloomCtx.strokeStyle='rgba(197,214,232,.18)';bloomCtx.lineWidth=4.2;bloomCtx.stroke();
+ bloomCtx.strokeStyle='rgba(190,215,240,.14)';bloomCtx.lineWidth=3.8;bloomCtx.stroke();
  ctx.drawImage(bloom,0,0,w,h);
  // A short, dim wake uses actual flight history and fades behind the body.
- const tailAge=Math.min(15,age+.038*60*pace),ti=Math.floor(tailAge),tj=Math.min(15,ti+1),tm=tailAge-ti;
  ctx.lineCap='round';ctx.beginPath();
- for(let n=0;n<particles.length;n++){
-  const a=particles[n].history,b=n*6;
-  ctx.moveTo(poses[b+2],poses[b+3]);ctx.lineTo(a[ti*2]+(a[tj*2]-a[ti*2])*tm,a[ti*2+1]+(a[tj*2+1]-a[ti*2+1])*tm);
+ for(let n=0;n<renderSources.length;n++){
+  const b=n*6;
+  ctx.moveTo(poses[b+2],poses[b+3]);ctx.lineTo(wakes[n*2],wakes[n*2+1]);
  }
  ctx.strokeStyle='rgba(189,208,228,.075)';ctx.lineWidth=.65;ctx.stroke();
  // Fixed brightness bands avoid flicker. Fine white tips taper the silver marks.
  for(let band=0;band<4;band++){
   ctx.beginPath();
-  for(let n=0;n<particles.length;n++){if(tones[n]!==band)continue;const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+2],poses[b+3])}
-  ctx.strokeStyle=`rgba(221,232,242,${.42+band*.14})`;ctx.lineWidth=.72+band*.105;ctx.stroke();
+  for(const n of toneGroups[band]){const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+2],poses[b+3])}
+  ctx.strokeStyle=bodyColors[band];ctx.lineWidth=.62+band*.105;ctx.stroke();
  }
  for(let band=0;band<2;band++){
   ctx.beginPath();
-  for(let n=0;n<particles.length;n++){if((tones[n]>>1)!==band)continue;const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+4],poses[b+5])}
-  ctx.strokeStyle=`rgba(249,251,255,${.48+band*.24})`;ctx.lineWidth=.72+band*.12;ctx.stroke();
+  for(let group=band*2;group<band*2+2;group++)for(const n of toneGroups[group]){const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+4],poses[b+5])}
+  ctx.strokeStyle=tipColors[band];ctx.lineWidth=.66+band*.12;ctx.stroke();
  }
- // Permanent subtle wings on a stable subset; no extra particles or forces.
+ // Permanent subtle wings on a stable subset; no extra forces.
  ctx.beginPath();ctx.lineCap='butt';
- for(let n=0;n<particles.length;n+=4){
+ for(let n=0;n<renderSources.length;n+=4){
   const near=Math.max(0,Math.min(1,(visualDepth[n]-.35)/.45)),amount=near*near*(3-2*near);if(amount<.035)continue;
   const b=n*6,dx=poses[b]-poses[b+2],dy=poses[b+1]-poses[b+3],len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len;
   const x=poses[b]-dx*.25,y=poses[b+1]-dy*.25,span=amount*(3.2+.7*Math.sin(time*5+n*1.7));
@@ -119,7 +145,7 @@ function draw(dt){
  paint(dt);
 }
 function paint(dt){
- ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
+ ctx.drawImage(backdrop,0,0,w,h);
  drawBirds(dt);drawArrow(dt);
 }
 function loop(now){const dt=last?Math.min((now-last)/1000,.1):.016;last=now;if(!paused&&!document.hidden)draw(dt);requestAnimationFrame(loop)}

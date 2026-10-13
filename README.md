@@ -4,6 +4,8 @@ Silver birds form a living background, and your mouse becomes a glowing red intr
 
 **[Play the website](https://comet-ctrl.github.io/flocking-website-idea/)**
 
+This branch's [private denser-flock preview](https://denser-flock-preview-1013.freebladeoscar.chatgpt.site/) is published separately. Updating it does not change the original GitHub Pages website.
+
 This is an independent interpretation of [《涌现 · 无人指挥》](https://www.bilibili.com/video/BV1CKa16mE83/), not the original video's code or an exact reconstruction of its simulation.
 
 ## How the flock works
@@ -25,13 +27,15 @@ The model has no flock-wide heading, target silhouette, assigned route, fixed sp
 
 The speed is fixed at **2.2×**. The simulation runs in fixed 1/60-second steps. The cruising target is about 277 world units per real second at 2.2×. Apparent screen speed varies with depth motion, turns, and avoidance. Long stalls and queued work are capped to prevent excessive catch-up work. On devices that cannot keep up, simulation time is dropped rather than allowing an ever-growing input delay.
 
-The population is capped at 1,100–2,200 birds according to viewport area. Neighbor lists and their angular links refresh every three physics steps. Each bird's cohesion refreshes every six steps, spread across six interleaved groups to reduce frame-time spikes. A separate coarse 3D grid calculates exact distance-weighted attraction from cell summaries; only cells intersecting the perception boundary need individual bird checks. Typed arrays and cached cell centers reduce allocations and repeated arithmetic.
+The simulated population is capped at 1,100–2,200 birds according to viewport area. The renderer adds one lightweight visual companion for every two simulated birds, giving 1,650–3,300 visible particles. These companions sample existing flight histories with a small time lag and varied sideways offset. They inherit avoidance and turns rather than running additional neighbor searches; they do not exert forces or change the underlying flock. Neighbor lists and their angular links refresh every three physics steps. Each bird's cohesion refreshes every six steps, spread across six interleaved groups to reduce frame-time spikes. A separate coarse 3D grid calculates exact distance-weighted attraction from cell summaries; only cells intersecting the perception boundary need individual bird checks. Typed arrays and cached cell centers reduce allocations and repeated arithmetic.
 
 On a served website, a Web Worker runs the physics separately from mouse handling and drawing. It transfers compact position snapshots instead of copying every simulation object. Drawing samples actual position history with a ten-tick buffer (about 76 milliseconds at 2.2×), smoothing the gaps between updates without inventing future turns. The arrow itself responds immediately. Browsers without worker support, and files opened directly, use the same physics on the main thread.
 
-Each bird is a tapered silver stroke with a fine white tip, stable brightness variation, and a depth-dependent length. Poses are calculated once and reused for batched drawing. A quarter-resolution light layer adds a soft halo without per-bird shadow blur, and a faint wake follows actual position history. The arrow has a thin fading shaft and a short trail whose lifetime is measured in seconds. The background gradient is cached, and hidden tabs stop requesting simulation time.
+Each bird is a fine tapered silver-blue stroke with a warm white tip, stable brightness variation, and a depth-dependent length. Poses are calculated once and reused for batched drawing; brightness groups are prepared at startup rather than filtering the full flock repeatedly. A quarter-resolution light layer adds a restrained halo without per-bird shadow blur, and a faint wake follows recorded position history. The arrow has a thin fading shaft and a short trail whose lifetime is measured in seconds. The blue-black background is rasterized once per resize, drawing resolution is capped at four million pixels, and hidden tabs stop requesting simulation time.
 
 Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS.
+
+The cohesion search packs nearby positions in contiguous typed arrays, retaining the original summation order. Grid coordinates and per-step constants are reused. These changes reduce computation without changing the physical rules or trajectories.
 
 ## Controls
 

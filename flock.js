@@ -6,6 +6,7 @@ class Flock{
   this.w=w;this.h=h;this.depth=180;this.accumulator=0;this.tick=0;this.birds=[];this.wanderStrength=.000004;
   this.edgeInset=Math.min(12,w*.08,h*.08);this.contacts=0;
   this.cell=18;this.cols=Math.ceil(w/this.cell);this.rows=Math.ceil(h/this.cell);this.layers=Math.ceil(this.depth/this.cell);
+  this.gridX=new Int32Array(count);this.gridY=new Int32Array(count);this.gridZ=new Int32Array(count);
   this.heads=new Int32Array(this.cols*this.rows*this.layers);this.next=new Int32Array(count);
   this.offsets=[];
   const reach=Math.ceil(120/this.cell);
@@ -21,6 +22,8 @@ class Flock{
   this.socialCell=96;this.socialCols=Math.ceil(w/this.socialCell);this.socialRows=Math.ceil(h/this.socialCell);this.socialLayers=Math.ceil(this.depth/this.socialCell);
   const socialCount=this.socialCols*this.socialRows*this.socialLayers;
   this.socialMoments=new Float64Array(socialCount*13);this.socialHeads=new Int32Array(socialCount);this.socialNext=new Int32Array(count);
+  this.socialStarts=new Int32Array(socialCount);this.socialEnds=new Int32Array(socialCount);
+  this.socialIds=new Int32Array(count);this.socialX=new Float64Array(count);this.socialY=new Float64Array(count);this.socialZ=new Float64Array(count);
   this.socialOccupied=new Int32Array(socialCount);this.socialRadius=300;
   this.socialCenterX=new Float64Array(socialCount);this.socialCenterY=new Float64Array(socialCount);this.socialCenterZ=new Float64Array(socialCount);
   for(let cell=0;cell<socialCount;cell++){
@@ -46,10 +49,10 @@ class Flock{
   heads.fill(-1);
   for(let i=0;i<b.length;i++){
    const p=b[i],x=clamp(Math.floor(p.x/c),0,cols-1),y=clamp(Math.floor(p.y/c),0,rows-1),z=clamp(Math.floor(p.z/c),0,layers-1),at=(z*rows+y)*cols+x;
-   next[i]=heads[at];heads[at]=i;
+   next[i]=heads[at];heads[at]=i;this.gridX[i]=x;this.gridY[i]=y;this.gridZ[i]=z;
   }
   for(let i=0;i<b.length;i++){
-   const p=b[i],gx=clamp(Math.floor(p.x/c),0,cols-1),gy=clamp(Math.floor(p.y/c),0,rows-1),gz=clamp(Math.floor(p.z/c),0,layers-1);
+   const p=b[i],gx=this.gridX[i],gy=this.gridY[i],gz=this.gridZ[i];
    let count=0,cutoff=120*120;dist.fill(Infinity);
    for(const offset of this.offsets){
     if(offset.d>cutoff)break;
@@ -90,6 +93,14 @@ class Flock{
    m[b+4]+=u*u;m[b+5]+=v*v;m[b+6]+=w*w;m[b+7]+=u*v;m[b+8]+=u*w;m[b+9]+=v*w;
    m[b+10]+=u*r2;m[b+11]+=v*r2;m[b+12]+=w*r2;
   }
+  // Pack each cell in the linked list's original order. Cut-cell queries
+  // reuse these contiguous positions without changing summation order.
+  let packed=0;
+  for(let k=0;k<used;k++){
+   const cell=occupied[k];this.socialStarts[cell]=packed;
+   for(let j=heads[cell];j!==-1;j=next[j]){const p=birds[j];this.socialIds[packed]=j;this.socialX[packed]=p.x;this.socialY[packed]=p.y;this.socialZ[packed]=p.z;packed++}
+   this.socialEnds[cell]=packed;
+  }
   const radiusSquared=this.socialRadius*this.socialRadius,inverseRadiusSquared=1/radiusSquared,half=cellSize*.5;
   for(let i=start;i<birds.length;i+=stride){
    const p=birds[i];
@@ -110,8 +121,8 @@ class Flock{
      cz+=dz*weight+t*m[b+3]-(2*(dx*m[b+8]+dy*m[b+9]+dz*m[b+6])+m[b+12])*inverseRadiusSquared;
      total+=weight-(cell===p.socialCell?1:0);
     }else{
-     for(let j=heads[cell];j!==-1;j=next[j]){
-      if(i===j)continue;const q=birds[j],x=q.x-p.x,y=q.y-p.y,z=q.z-p.z,weight=1-(x*x+y*y+z*z)*inverseRadiusSquared;
+     for(let j=this.socialStarts[cell];j<this.socialEnds[cell];j++){
+      if(i===this.socialIds[j])continue;const x=this.socialX[j]-p.x,y=this.socialY[j]-p.y,z=this.socialZ[j]-p.z,weight=1-(x*x+y*y+z*z)*inverseRadiusSquared;
       if(weight<=0)continue;cx+=x*weight;cy+=y*weight;cz+=z*weight;total+=weight;
      }
     }
@@ -134,6 +145,7 @@ class Flock{
    tx[i]+=x*weight;tx[j]-=x*weight;ty[i]+=y*weight;ty[j]-=y*weight;tz[i]+=z*weight;tz[j]-=z*weight;
   }
   const radius=Math.min(this.w,this.h)*.15*(intruder.down?1.3:1),inset=this.edgeInset;
+  const zone=Math.min(125,this.w*.2,this.h*.2),look=28,response=1-Math.exp(-dt*10);
   let leadX=(intruder.vx||0)*.2,leadY=(intruder.vy||0)*.2;
   const leadScale=Math.min(1,radius/(Math.hypot(leadX,leadY)||1));leadX*=leadScale;leadY*=leadScale;
   const leadSquared=leadX*leadX+leadY*leadY;
@@ -163,7 +175,6 @@ class Flock{
    }
    // Soft physical enclosure, including a depth slab. It has no camera,
    // periodic space, or prescribed circuit. The inset guard is only a backstop.
-   const zone=Math.min(125,this.w*.2,this.h*.2),look=28;
    const left=smooth(1-(p.x+p.vx*look-inset)/zone),right=smooth(1-(this.w-inset-p.x-p.vx*look)/zone);
    const top=smooth(1-(p.y+p.vy*look-inset)/zone),bottom=smooth(1-(this.h-inset-p.y-p.vy*look)/zone);
    ax+=(left-right)*.075;ay+=(top-bottom)*.075;
@@ -171,7 +182,7 @@ class Flock{
    az+=(front-back)*.055;
    const drive=(2.1-speed)*.035;ax+=this.unitX[i]*drive;ay+=this.unitY[i]*drive;az+=this.unitZ[i]*drive;
    const force=Math.hypot(ax,ay,az),scale=Math.min(1,(.07+alarm*.16)/(force||1));ax*=scale;ay*=scale;az*=scale;
-   const response=1-Math.exp(-dt*10);p.ax+=(ax-p.ax)*response;p.ay+=(ay-p.ay)*response;p.az+=(az-p.az)*response;
+   p.ax+=(ax-p.ax)*response;p.ay+=(ay-p.ay)*response;p.az+=(az-p.az)*response;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wx+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wx*.03;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wy+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wy*.03;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wz+=(p.noiseState/4294967296-.5)*this.wanderStrength*2-p.wz*.03;
