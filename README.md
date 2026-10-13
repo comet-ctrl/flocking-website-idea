@@ -20,7 +20,7 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
 4. **Stay together.** Local cohesion draws birds toward their neighbors. A gentle whole-flock centering and alignment term helps disconnected pieces regroup.
-5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds peel sideways relative to their neighbors' heading, with a smaller outward push. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer increases the effect. The forward extension fades as the arrow stops.
+5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds use the same slowly changing flock orientation to choose two sides. A curved bypass steers their velocity outward before the obstacle and inward after it, preserving forward flight instead of ejecting them radially. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer widens the opening. The forward extension fades as the arrow stops.
 6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. A slowly varying shared bank initiates broad turns in open space.
 7. **Draw.** Each bird is a short silver stroke oriented along its velocity. The normal canvas cursor is hidden; a separate glowing red arrow and fading trail follow the pointer.
 
@@ -65,6 +65,8 @@ Rendering interpolates between the last two physics poses, adding at most one ph
 After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A gently following camera keeps the group in view without wall-driven loops. The default pace remains 1.8×.
 
 Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. The body starts wider, and density pressure resists collapse into a compact knot while allowing local splitting. Shorter, brighter marks and subdued trails keep individual particles readable.
+
+Loose tips outside the main body's length or width receive a gradual inward correction and stronger heading alignment. Sparse or frightened birds are excluded from outward length expansion. The intruder's extra speed boost is reduced to limit birds racing ahead of their stream. These changes reduce offshoots without hiding or deleting birds.
 
 This tuning was visually compared before publication using a 1280×720 preview and the reference video's 640×360 source (both 16:9), including a single pointer sweep. The video was played at normal speed; the site stayed at 1.8×. It is a qualitative comparison, not a frame-by-frame reproduction.
 
