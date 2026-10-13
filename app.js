@@ -40,7 +40,7 @@ function draw(dt){
   ctx.strokeStyle=`rgba(205,222,240,${.08-segment*.025})`;ctx.lineWidth=.65;ctx.beginPath();
   for(const p of particles){
    for(let end=0;end<2;end++){
-    const age=Math.min(7,1-alpha+(segment+end)*.01*60),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
+    const age=Math.min(7,1-alpha+(segment+end)*.01*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
     const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
     if(end)ctx.lineTo(x,y);else ctx.moveTo(x,y);
    }

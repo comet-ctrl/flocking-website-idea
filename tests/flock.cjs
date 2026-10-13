@@ -2,26 +2,6 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const Flock=require('../flock.js');
 
-test('all speed settings use 60 physics updates per real second',()=>{
- for(const pace of [1,1.5,1.8,2.2]){
-  const f=new Flock(1280,720,1,()=>.5);let updates=0;
-  const step=f.step.bind(f);f.step=(...args)=>{updates++;step(...args)};
-  for(let i=0;i<120;i++)f.advance(1/120,{active:false},pace);
-  assert.equal(updates,60);assert.ok(Math.abs(f.time-pace)<1e-9);
- }
-});
-test('2.2x movement is not truncated to 2x',()=>{
- const f=new Flock(1280,720,1,()=>.5),p=f.birds[0];p.vx=2.1;p.vy=0;
- const x=p.x,y=p.y;f.advance(1/60,{active:false},2.2);
- assert.ok(Math.abs(Math.hypot(p.x-x,p.y-y)-2.1*2.2)<1e-9);
-});
-test('stalls have bounded catch-up and leave no physics backlog',()=>{
- const f=new Flock(1280,720,1);let updates=0;f.step=()=>updates++;
- f.advance(2,{active:false},2.2);assert.equal(updates,4);
- f.advance(0,{active:false},2.2);assert.equal(updates,4);
- assert.ok(f.renderAlpha>=0&&f.renderAlpha<=1);
-});
-
 function sample(vx){
  const f=new Flock(1200,800,1,()=>.5);
  Object.assign(f.birds[0],{x:660,y:420,vx:2.1,vy:0});
@@ -98,4 +78,27 @@ test('free-space flight and mouse avoidance are invariant under camera translati
   b.step(1/60,{active:true,x:5630,y:-2640,vx:200,vy:0});
  }
  a.birds.forEach((p,i)=>{assert.ok(Math.abs(b.birds[i].x-p.x-5000)<1e-6);assert.ok(Math.abs(b.birds[i].y-p.y+3000)<1e-6)});
+});
+test('birds on opposite sides peel apart while maintaining forward flight',()=>{
+ function sample(active){const f=new Flock(1280,720,2,()=>.5);f.shapeAngle=0;
+  f.birds.forEach((p,i)=>Object.assign(p,{x:580,y:360+(i?18:-18),vx:2.1,vy:0}));
+  for(let i=0;i<8;i++)f.step(1/60,{active,x:620,y:360,vx:0,vy:0});
+  return f.birds;
+ }
+ const quiet=sample(false),split=sample(true);
+ assert.ok(split[0].vy<quiet[0].vy);assert.ok(split[1].vy>quiet[1].vy);
+ assert.ok(split.every(p=>p.vx>1.9));
+});
+test('a centered mouse pass leaves very few isolated birds',()=>{
+ let seed=7;const n=1400,f=new Flock(1280,720,n,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+ for(let k=0;k<300;k++){
+  const cx=f.birds.reduce((sum,p)=>sum+p.x,0)/n,cy=f.birds.reduce((sum,p)=>sum+p.y,0)/n,t=k/60;
+  f.advance(1/60,{active:t>2&&t<4,x:cx+(t-3)*400,y:cy,vx:400,vy:0},1.8);
+ }
+ let loose=0;
+ for(let i=0;i<n;i++){let neighbors=0;
+  for(let j=0;j<n&&neighbors<3;j++)if(i!==j&&Math.hypot(f.birds[i].x-f.birds[j].x,f.birds[i].y-f.birds[j].y)<40)neighbors++;
+  if(neighbors<3)loose++;
+ }
+ assert.ok(loose<=3,`isolated birds after pass: ${loose}`);
 });
