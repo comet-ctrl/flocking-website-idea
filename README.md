@@ -43,6 +43,7 @@ This is an artistic boids-style model, not a scientifically exact starling simul
 | --- | --- |
 | Move mouse / drag a finger | Act as the red intruder |
 | Hold mouse button / touch | Stronger avoidance |
+| Speed | Choose 1×, 1.5×, 1.8× (default), or 2.2× |
 | Demo intruder | Let the arrow move automatically when the pointer is outside the canvas |
 | Space or Pause | Pause/resume the simulation |
 | H | Hide/show the interface |
@@ -50,6 +51,14 @@ This is an artistic boids-style model, not a scientifically exact starling simul
 | Fullscreen | Enter/exit fullscreen where supported |
 
 The animation starts paused when the browser reports a reduced-motion preference. The user can explicitly resume it.
+
+## Speed and performance
+
+The recommended default is **1.8×**: about **227 CSS pixels per second** in calm flight, compared with the old 126. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Try 1.5× for a calmer background or 2.2× for a more energetic effect.
+
+The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
+
+Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
 ## Run locally
 
@@ -70,7 +79,7 @@ Then visit `http://localhost:8000`.
 
 ## Portfolio integration
 
-Keep the simulation behind semantic HTML rather than rendering the site's content into the canvas. Let foreground links and buttons keep normal pointer behavior. Pause the animation when the page is hidden, and consider reducing the bird count on mobile. These are integration ideas, not completed features of this prototype.
+Keep the simulation behind semantic HTML rather than rendering the site's content into the canvas. Let foreground links and buttons keep normal pointer behavior, and consider reducing the bird count on mobile. Hidden-tab pausing is already implemented; the portfolio layout and mobile population tuning remain integration ideas.
 
 Possible next steps:
 

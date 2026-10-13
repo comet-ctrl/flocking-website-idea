@@ -1,22 +1,32 @@
 /* Local separation, alignment and cohesion. No lanes or prescribed flight paths. */
 class Flock {
  constructor(width,height,count,random=Math.random){
-  this.w=width;this.h=height;this.time=0;this.birds=[];
+  this.w=width;this.h=height;this.time=0;this.accumulator=0;this.neighborTick=0;this.birds=[];
   for(let i=0;i<count;i++){
    const angle=random()*Math.PI*2,r=Math.sqrt(random());
    const x=width*(.48+Math.cos(angle)*r*.245),y=height*(.47+Math.sin(angle)*r*.125)+Math.cos(angle)*r*height*.06;
    const heading=-.2+(random()-.5)*.12,speed=2.05+random()*.12;
-   this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,nx:0,ny:0,ax:0,ay:0,a:.36+random()*.5,size:.65+random()*.45});
+   this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,nx:0,ny:0,ax:0,ay:0,neighbors:new Int32Array(7),neighborCount:0,a:.36+random()*.5,size:.65+random()*.45});
   }
+ }
+ // Scale simulation time, not just velocity: preserve turning and avoidance.
+ // Small fixed steps make normal 30/60/120 Hz rendering use the same physics.
+ advance(elapsed,intruder,pace=1.8){
+  this.accumulator+=Math.min(Math.max(elapsed,0),.1)*pace;
+  const tick=1/60;
+  while(this.accumulator+1e-10>=tick){this.step(tick,intruder);this.accumulator-=tick}
  }
  step(dt,intruder){
   const step=Math.min(dt*60,2);this.time+=dt;
+  // Reuse neighbor identities for three ticks; forces use current positions each tick.
+  const refreshNeighbors=this.neighborTick++%3===0;
   const birds=this.birds,cell=64,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
-  for(let i=0;i<birds.length;i++){const p=birds[i];cx+=p.x;cy+=p.y;meanVX+=p.vx;meanVY+=p.vy;const key=Math.floor(p.x/cell)+','+Math.floor(p.y/cell);let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(i)}
+  for(let i=0;i<birds.length;i++){const p=birds[i];cx+=p.x;cy+=p.y;meanVX+=p.vx;meanVY+=p.vy;if(!refreshNeighbors)continue;const key=Math.floor(p.x/cell)+','+Math.floor(p.y/cell);let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(i)}
   cx/=birds.length||1;cy/=birds.length||1;meanVX/=birds.length||1;meanVY/=birds.length||1;
-  const ids=new Int32Array(7),distances=new Float64Array(7);
+  const distances=new Float64Array(7);
   for(let i=0;i<birds.length;i++){
-   const p=birds[i],gx=Math.floor(p.x/cell),gy=Math.floor(p.y/cell);let found=0;
+   const p=birds[i],gx=Math.floor(p.x/cell),gy=Math.floor(p.y/cell);const ids=p.neighbors;let found=p.neighborCount;
+   if(refreshNeighbors){found=0;
    distances.fill(Infinity);
    for(let yy=-1;yy<=1;yy++)for(let xx=-1;xx<=1;xx++){
     const bucket=grid.get((gx+xx)+','+(gy+yy));if(!bucket)continue;
@@ -24,8 +34,9 @@ class Flock {
      let k=Math.min(found,6);while(k>0&&d2<distances[k-1]){if(k<7){distances[k]=distances[k-1];ids[k]=ids[k-1]}k--}distances[k]=d2;ids[k]=j;found=Math.min(7,found+1);
     }
    }
+   p.neighborCount=found;}
    let ax=0,ay=0,sx=0,sy=0,px=0,py=0,vx=0,vy=0;
-   for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.sqrt(distances[k]);if(d<9){const push=(9-d)/9;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
+   for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<9){const push=(9-d)/9;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
    if(found){ax+=(vx/found-p.vx)*.085+(px/found-p.x)*.0024+sx*.095;ay+=(vy/found-p.vy)*.085+(py/found-p.y)*.0024+sy*.095}
    // Gentle group cohesion bridges a split without locking birds to a path.
    const centerDistance=Math.hypot(cx-p.x,cy-p.y),gather=Math.min(.055,centerDistance*.00018);
@@ -71,8 +82,3 @@ class Flock {
  }
 }
 if(typeof module!=='undefined')module.exports=Flock;
-
-
-
-
-
