@@ -1,124 +1,90 @@
 # Red Arrow — a flocking website idea
 
-A personal website concept: silver birds move across a dark background, while your mouse becomes a glowing red intruder. Each bird responds to nearby birds and the pointer.
+Silver birds form a living background, and your mouse becomes a glowing red intruder.
 
-**[Play the prototype](https://comet-ctrl.github.io/flocking-website-idea/)**
+**[Play the website](https://comet-ctrl.github.io/flocking-website-idea/)**
 
-This repository contains the working interaction prototype and a direction for turning it into a personal portfolio. It is an independent interpretation of the reference, not the original video's code or a pixel-perfect recreation.
+This is an independent interpretation of [《涌现 · 无人指挥》](https://www.bilibili.com/video/BV1CKa16mE83/), not the original video's code or an exact reconstruction of its simulation.
 
-## The website idea
+## How the flock works
 
-Use the flock as the living background of a personal homepage. Place a short introduction, selected projects, and contact links above the canvas. Visitors can disturb the flock without navigating away; it becomes a memorable part of the site's identity.
+Each bird has a position, velocity, and turning momentum in three dimensions. You see a fixed, flat projection of that small volume. Its horizontal and vertical limits are exactly the screen; depth lets birds pass above or below each other and form overlapping folds. There is no scrolling, camera movement, zoom, wrapping, or hidden flight area beyond the screen edges.
 
-The current prototype is a full-screen playground. A portfolio version should keep text in calm, readable areas, retain ordinary cursors over links and controls, and provide a visible pause option. Touch input, reduced-motion preferences, and lower-powered devices should remain first-class considerations.
+The flock follows local rules:
 
-## How it works
+1. **Leave room.** A bird moves away from its closest neighbors when they come within 30 world units. This spacing accounts for birds occupying a volume rather than a flat plane.
+2. **Pass turns along.** A spatial grid finds the seven closest birds within 120 units in 3D. Nearby birds exchange equal and opposite turning forces. Each bird retains its own angular momentum, so a bend can travel through the flock instead of rotating everyone together.
+3. **Stay with the nearby flock.** Birds within 300 units attract one another, with influence fading to zero at that distance. Most of the attraction along a bird's own forward direction is removed: it mainly steers the bird, with some speed adjustment to catch up. This reduces the tendency to brake the front and accelerate the back into a compact ball.
+4. **React to the intruder.** Mouse velocity extends the arrow's danger zone up to 0.2 seconds ahead, with a distance cap. Birds are repelled from the nearest point on that predicted path, through the entire depth of the flock. No left/right side or number of streams is assigned. Holding the pointer increases avoidance.
+5. **Fly with inertia.** Acceleration eases toward its target. Turning momentum is damped, while small independent fluctuations allow local variation. Self-propulsion maintains a cruising speed; a head-on threat can slow a bird down.
+6. **See the boundaries ahead.** Birds anticipate the screen edges and the front/back of the depth volume. Close to a boundary, outward velocity eases down; a final guard keeps every position inside. There is no prescribed circuit around the screen.
 
-Every bird stores its position, velocity, and its own turning momentum. The browser repeats a simulation step and redraws the scene using `requestAnimationFrame`.
+The model has no flock-wide heading, target silhouette, assigned route, fixed split, or recovery quota. One population starts together; its changing shape and response come from these local interactions. Strong disturbances can temporarily separate parts of the flock. It is an artistic flocking model, not a scientifically validated starling simulation or a claim about the reference video's algorithm.
 
-1. **Find neighbors.** A spatial grid finds each bird's seven closest neighbors within 64 pixels. Distances are ordinary screen distances: opposite edges are not connected.
-2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
-3. **Pass turns to neighbors.** A bird keeps turning momentum instead of immediately averaging its direction into the group. Nearby birds exchange small turning forces: if either bird chooses the other among its seven closest neighbors, they form a local link. Each link applies equal and opposite forces, with a smaller weight where birds have more links. A bend can therefore travel from bird to bird without applying one shared turn to the whole flock. Gentle damping smooths the motion, and tiny independent, slowly changing fluctuations keep flight from settling into a rigid translation.
-4. **Turn toward nearby birds.** Cohesion considers birds within 300 pixels, a wider neighborhood than the seven closest birds. Attraction fades smoothly with distance. Most of its effect turns a bird toward its neighbors; only a small portion changes forward speed. This avoids strongly braking the front and accelerating the back until a long flock compresses into a ball. Some speed response remains so separated birds can catch up. The steering follows each bird's own heading, with no assigned world direction or flight path.
-5. **Avoid the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds are repelled from the nearest point on this predicted path. No left or right side is assigned. Holding the pointer makes the danger zone larger and repulsion stronger.
-6. **Move with inertia.** Acceleration changes gradually and has a limit. Self-propulsion nudges birds toward a cruising speed, while avoidance can slow a bird facing the intruder head-on. A maximum speed prevents runaway acceleration.
-7. **Stay inside the screen.** The visible canvas is the entire world. Birds anticipate an approaching edge and bank back into the available space; nearby birds carry that turn through the flock. Close to an edge, only outward speed eases down to leave time for the turn, while flight along the edge remains free. There is no wrapping, camera panning, zooming, or hidden flight area. Pointer and bird positions use the same screen coordinates. Each bird is drawn as a short silver stroke oriented along its velocity.
+## Speed, drawing, and performance
 
-Conceptually:
+The default speed remains **2.2×**. The simulation runs in fixed 1/60-second steps, and the speed control changes how much simulation time passes. The cruising target is about 277 world units per real second at 2.2×. Apparent screen speed varies with depth motion, turns, and avoidance. Long stalls and queued work are capped to prevent excessive catch-up work. On devices that cannot keep up, simulation time is dropped rather than allowing an ever-growing input delay.
 
-```text
-turning momentum += local heading differences + neighboring turning momentum
-                  - damping + small independent fluctuations
+The population is capped at 1,100–2,200 birds according to viewport area. Neighbor lists and their angular links refresh every three physics steps. Each bird's cohesion refreshes every six steps, spread across six interleaved groups to reduce frame-time spikes. A separate coarse 3D grid calculates exact distance-weighted attraction from cell summaries; only cells intersecting the perception boundary need individual bird checks. Typed arrays and cached cell centers reduce allocations and repeated arithmetic.
 
-steering = separation + cohesion as turning and gentle catch-up
-         + intruder repulsion + self-propulsion
-turning momentum += local anticipation of an approaching screen edge
+On a served website, a Web Worker runs the physics separately from mouse handling and drawing. It transfers compact position snapshots instead of copying every simulation object. Drawing samples actual position history with a ten-tick buffer (about 76 milliseconds at 2.2×), smoothing the gaps between updates without inventing future turns. The arrow itself responds immediately. Browsers without worker support, and files opened directly, use the same physics on the main thread.
 
-acceleration = ease(previous acceleration, steering)
-velocity = rotate(velocity, turning momentum * elapsed time)
-velocity = limit speed(velocity + acceleration * elapsed time)
-turning momentum += a small part of the turn caused by local steering
-position = position + velocity * elapsed time
-position = stay within the visible screen boundary
-```
+Each bird is a silver stroke with stable brightness variation and a depth-dependent length. Four batches draw the bright marks; no per-bird shadow blur is needed. Three faint trail batches show about 30 milliseconds of actual position history. The background gradient is cached, and hidden tabs stop requesting simulation time.
 
-Flock shapes and openings around the mouse come from the local rules, without a target formation, shared bank, assigned bypass curve, or whole-flock centering force. Wider social contact supports one flock. Edge avoidance is local to birds approaching a boundary; it does not assign the whole group a circular route. A final boundary constraint prevents escape even during strong mouse disturbances. Birds never disappear into an offscreen world or reappear at the opposite edge.
-
-This is an artistic boids-style model, not a scientifically exact starling simulation or a claim about the reference video's algorithm. Birds have no assigned tracks or positions. The prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
+Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS. A lower speed setting remains available for less powerful devices.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Move mouse / drag a finger | Act as the red intruder |
-| Hold mouse button / touch | Stronger avoidance |
-| Speed | Choose 1×, 1.5×, 1.8×, or 2.2× (default) |
-| Demo intruder | Let the arrow move automatically when the pointer is outside the canvas |
-| Space or Pause | Pause/resume the simulation |
+| Move mouse / drag a finger | Move the red intruder |
+| Hold mouse / touch | Stronger avoidance |
+| Speed | 1×, 1.5×, 1.8×, or 2.2× (default) |
+| Demo intruder | Automatic arrow motion while the pointer is outside the canvas |
+| Space or Pause | Pause/resume |
 | H | Hide/show the interface |
 | Reset | Recreate the flock |
-| Fullscreen | Enter/exit fullscreen where supported |
+| Fullscreen | Fill the display where supported |
 
-The animation starts paused when the browser reports a reduced-motion preference. The user can explicitly resume it.
+The animation starts paused if the browser reports a reduced-motion preference.
 
-## Speed and performance
+## The website idea
 
-The default is **2.2×**. The cruising target corresponds to about **277 CSS pixels per second**, compared with about 126 at 1×; steering and avoidance can change a bird's actual speed. This is a visual tuning choice, not an exact measurement of the reference video's particles. Use 1.8× or 1.5× for a calmer background.
+Use the flock behind a personal homepage with a short introduction, selected projects, and contact links. Keep those elements as semantic HTML above the canvas, with readable contrast and ordinary cursors on interactive controls. Visitors can disturb the background while exploring the portfolio.
 
-The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
+This repository contains the full-screen interaction prototype. Portfolio content, a quality selector, and a static alternative are possible future additions.
 
-Neighbor search uses a spatial grid, searches nearby cells first, and skips cells that cannot contain a closer candidate. It finds the actual seven nearest neighbors within 64 pixels and stops at the screen edges. Cohesion uses a wider, finite perception range. Reused typed arrays reduce temporary allocations.
+## Files and local use
 
-The closest-neighbor lists and their turning links refresh every three physics steps; the broader cohesion calculation refreshes every six. Turning links and work buffers are reused typed arrays. Each pair is processed once per step. Coarse-cell summaries compute the same weighted attraction without scanning every bird in fully covered cells. Steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
+- `index.html`: page layout, styles, canvas, and controls.
+- `app.js`: drawing, interpolation, mouse input, animation timing, and controls.
+- `flock.js`: bird physics, 3D neighbor searches, local attraction, and boundary handling.
+- `flock-runner.js`: worker scheduling, rendering snapshots, and the synchronous fallback.
+- `flock-worker.js`: runs the same physics away from the browser's main thread.
+- `.nojekyll`: tells GitHub Pages to serve plain static files.
+- `tests/`: checks the physical rules and spatial calculations.
 
-Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
-
-Density develops from local separation and cohesion. There is no minimum connected percentage, recovery quota, target silhouette, or forced two-stream split.
-
-## Run locally
-
-No dependencies, backend, API keys, or build step are needed. Open `index.html` in a browser, or serve this directory with any static web server:
+There are no runtime dependencies, API keys, backend, or build step. Open `index.html` or use a static server:
 
 ```sh
 python -m http.server 8000
 ```
 
-Then visit `http://localhost:8000`.
-
-Run the simulation regression checks with:
+Run the regression checks with:
 
 ```sh
-node --test tests/flock.cjs tests/neighbors.cjs
+node --test tests/*.cjs
 ```
 
-The checks cover exact neighbor selection and cohesion, screen boundaries, fixed-step timing, local interaction, and simulation stability. A matched-control experiment turns birds at just one end of a long group, then checks that the change arrives later in more distant birds and retains a meaningful strength. The checks do not require a particular flock silhouette or split. Visual comparison is still needed to judge resemblance to the reference.
+The checks cover exact 3D neighbors and attraction against exhaustive calculations, fixed-step timing at different refresh rates, local influence, mouse anticipation, finite screen/depth bounds, continuous history, delayed turn propagation, and worker transfer/timing behavior. The turn experiment uses a localized 17-degree heading change in an approximately 900-unit-long group at uncompressed personal spacing, and checks that the response arrives later farther away without losing its strength. Visual comparison is still required to judge resemblance.
 
-## Files
+## References
 
-- `index.html`: page layout, styling, canvas, and controls.
-- `app.js`: animation loop, drawing, cursor trail, pointer input, and UI.
-- `flock.js`: local flocking, intruder repulsion, flight inertia, and screen-edge avoidance.
-- `neighbors.js`: optimized nearest-neighbor search inside the visible screen.
-- `.nojekyll`: serves the repository as plain static files on GitHub Pages.
-
-## Portfolio integration
-
-Keep the simulation behind semantic HTML rather than rendering the site's content into the canvas. Let foreground links and buttons keep normal pointer behavior, and consider reducing the bird count on mobile. Hidden-tab pausing is already implemented; the portfolio layout and mobile population tuning remain integration ideas.
-
-Possible next steps:
-
-- Add an introduction and selected-project cards with stable contrast.
-- Add a quality selector and optional performance-based population adjustment.
-- Offer a static illustration for visitors who prefer no animation.
-- Add an optional monochrome theme that matches the rest of the portfolio.
-
-## Inspiration and references
-
-- [Original visual reference: 《涌现 · 无人指挥》 on Bilibili](https://www.bilibili.com/video/BV1CKa16mE83/).
+- [Original visual reference on Bilibili](https://www.bilibili.com/video/BV1CKa16mE83/).
 - [Craig Reynolds: Boids](https://www.red3d.com/cwr/boids/).
-- [Cavagna et al.: Flocking and turning — an inertial-spin model](https://arxiv.org/abs/1403.1202), inspiration for local turning momentum and propagation; this prototype is an artistic adaptation.
-- [Daniel Lengyel: flocking integrated into a personal homepage](https://daniellengyel.github.io/).
-- [Chamu: boids as a personal-site background](https://chamu.io/projects/boids-background/).
-- [Steve's Site: interactive murmuration](https://stevessite.com/murmuration.html).
+- [Cavagna et al.: an inertial-spin model of flocking and turning](https://arxiv.org/abs/1403.1202), inspiration for local turning momentum; this is an artistic adaptation.
+- [Daniel Lengyel's personal homepage](https://daniellengyel.github.io/).
+- [Chamu's boids background](https://chamu.io/projects/boids-background/).
+- [Steve's interactive murmuration](https://stevessite.com/murmuration.html).
 
-External examples are references only. Their code, video footage, screenshots, and other assets are not included in this repository.
+External examples are references only. Their footage, source code, and other assets are not included in this repository.

@@ -5,7 +5,7 @@ const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,
 let tail=[];
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
 let flock,pace=2.2,background;
-function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
+function seed(){flock?.destroy();flock=new FlockRunner(w,h,Math.min(2200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
 function draw(dt){
@@ -19,15 +19,23 @@ function draw(dt){
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
  // Screen pixels are world coordinates. There is no camera or offscreen world.
  if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
- // Blend physics poses and batch similar silver strokes into four draw calls.
- const alpha=flock.renderAlpha;
+ // Draw a short distance behind the worker's simulation clock. Actual pose
+ // history gives smooth motion between snapshots, without predicting turns.
+ const age=flock.renderAgeTicks,i=Math.floor(age),j=Math.min(15,i+1),mix=age-i;
+ const alpha=1-Math.min(1,age);
+ ctx.lineCap='round';
  for(let band=0;band<4;band++){
-  ctx.strokeStyle=`rgba(232,238,245,${.43+band*.14})`;ctx.lineWidth=.72+band*.13;ctx.beginPath();
+  ctx.beginPath();
   for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
-   const x=p.px+(p.x-p.px)*alpha,y=p.py+(p.y-p.py)*alpha;
-   const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=1.6+speed*1.45;
+   const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
+   // Depth changes length continuously; brightness groups remain stable.
+   const depth=(p.pz+(p.z-p.pz)*alpha)/flock.depth;
+   const k=Math.min(14,i),l=Math.min(14,j);
+   const vx=(p.history[k*2]-p.history[k*2+2])*(1-mix)+(p.history[l*2]-p.history[l*2+2])*mix,vy=(p.history[k*2+1]-p.history[k*2+3])*(1-mix)+(p.history[l*2+1]-p.history[l*2+3])*mix;
+   const speed=Math.hypot(vx,vy)||1,len=(1.7+speed*1.65)*(.8+p.size*.45)*(.8+depth*.4);
    ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
-  }ctx.stroke();
+  }
+  ctx.strokeStyle=`rgba(232,238,245,${.52+band*.145})`;ctx.lineWidth=.85+band*.12;ctx.stroke();
  }
  // Faint 30 ms paths from actual past positions, not accumulated canvas blur.
  // Real-time duration keeps trail lengths consistent across refresh rates.
@@ -36,7 +44,7 @@ function draw(dt){
   for(const p of particles){
    let startX=0,startY=0;
    for(let end=0;end<2;end++){
-    const age=Math.min(7,1-alpha+(segment+end)*.01*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
+    const trailAge=Math.min(15,age+(segment+end)*.01*60*pace),i=Math.floor(trailAge),j=Math.min(15,i+1),mix=trailAge-i;
     const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
     if(end){ctx.moveTo(startX,startY);ctx.lineTo(x,y)}else{startX=x;startY=y}
    }
@@ -50,7 +58,7 @@ function draw(dt){
 function loop(now){const dt=last?Math.min((now-last)/1000,.1):.016;last=now;if(!paused&&!document.hidden)draw(dt);requestAnimationFrame(loop)}
 function pause(){paused=!paused;document.querySelector('#pause').textContent=paused?'Resume':'Pause';document.querySelector('#pause').setAttribute('aria-pressed',paused)}
 document.querySelector('#speed').onchange=e=>{pace=Number(e.target.value)};
-document.addEventListener('visibilitychange',()=>{last=0;flock.accumulator=0;mouse.vx=0;mouse.vy=0});
+document.addEventListener('visibilitychange',()=>{last=0;flock.resetClock();mouse.vx=0;mouse.vy=0});
 document.querySelector('#pause').onclick=pause;document.querySelector('#mode').onclick=e=>{demo=!demo;e.target.setAttribute('aria-pressed',demo);e.target.textContent=demo?'Demo: on':'Demo intruder'};document.querySelector('#reset').onclick=()=>{seed();draw(0)};
 document.querySelector('#full').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{document.querySelector('#full').textContent='Unavailable'}};
 document.addEventListener('fullscreenchange',()=>document.querySelector('#full').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen');
