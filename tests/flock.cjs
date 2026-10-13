@@ -42,7 +42,7 @@ test('render interpolation lies between poses without advancing the simulation',
 
 test('distant birds cannot steer a local group through global cohesion or alignment',()=>{
  const local=[{x:300,y:350},{x:311,y:352},{x:304,y:365},{x:317,y:361}];
- const isolated=setup(local),withDistantBirds=setup([...local,...Array.from({length:40},(_,i)=>({x:850+i%8*9,y:130+Math.floor(i/8)*9,vx:-1.2,vy:1.7}))]);
+ const isolated=setup(local,2400,1600),withDistantBirds=setup([...local,...Array.from({length:40},(_,i)=>({x:1500+i%8*9,y:1100+Math.floor(i/8)*9,vx:-1.2,vy:1.7}))],2400,1600);
  for(let tick=0;tick<90;tick++){
   isolated.step(1/60,quiet);withDistantBirds.step(1/60,quiet);
   isolated.birds.forEach((p,i)=>assert.deepEqual(physicalState(withDistantBirds.birds[i]),physicalState(p)));

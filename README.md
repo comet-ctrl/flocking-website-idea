@@ -19,10 +19,10 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 1. **Find neighbors.** A spatial grid finds each bird's seven closest neighbors within 64 pixels. Distances continue across opposite screen edges.
 2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
-4. **Stay together locally.** Cohesion draws each bird toward its nearby neighbors, using the same rule in every direction.
+4. **Stay together locally.** Cohesion considers birds within 300 pixels, a wider neighborhood than the seven closest birds. This keeps contact across the flock instead of letting each small clump behave independently. Gentle attraction fades smoothly with distance and uses the same rule in every direction.
 5. **Avoid the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds are repelled from the nearest point on this predicted path. No left or right side is assigned. Holding the pointer makes the danger zone larger and repulsion stronger.
 6. **Move with inertia.** Acceleration changes gradually and has a limit. Self-propulsion nudges birds toward a cruising speed, while avoidance can slow a bird facing the intruder head-on. A maximum speed prevents runaway acceleration.
-7. **Draw and wrap.** Each bird is a short silver stroke oriented along its velocity. A bird leaving one edge continues from the opposite edge without a forced turn. Matching trail and render copies keep the crossing continuous. A glowing red arrow and fading trail replace the canvas cursor.
+7. **Keep the flock in view.** Each bird is a short silver stroke oriented along its velocity. The view gently follows the flock, displaying birds continuously across the repeating world's seams. This camera movement does not affect flight or steering. Pointer coordinates are translated into the same world so the red arrow still interacts with the birds beneath it.
 
 Conceptually:
 
@@ -36,7 +36,7 @@ position = position + velocity * elapsed time
 position = wrap across opposite edges
 ```
 
-The view stays fixed. Flock shapes and splits come from the local rules, without a target formation, shared bank, assigned bypass curve, or whole-flock centering force. The repeating world removes the need for boundary steering. Separate groups can remain separate when they lose contact; the code does not require them to rejoin a prescribed shape.
+Flock shapes and openings around the mouse come from the local rules, without a target formation, shared bank, assigned bypass curve, or whole-flock centering force. Wider social contact supports one flock, while the following view prevents a screen edge from displaying it as two distant groups. The repeating world removes the need for boundary steering. Strong sustained disturbance can still separate birds beyond their finite perception range; they are never teleported back or assigned a regrouping path.
 
 This is an artistic boids-style model, not a scientifically exact starling simulation or a claim about the reference video's algorithm. Birds have no assigned tracks or positions. The prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
 
@@ -61,9 +61,9 @@ The default is **2.2×**. The cruising target corresponds to about **277 CSS pix
 
 The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
 
-Neighbor search uses cells roughly 16 pixels wide, searches nearby cells first, and skips cells that cannot contain a closer candidate. It finds the actual seven nearest neighbors within 64 pixels, including across wrapped edges. Reused typed arrays reduce temporary allocations. There is no extended search for distant flock members.
+Neighbor search uses a spatial grid, searches nearby cells first, and skips cells that cannot contain a closer candidate. It finds the actual seven nearest neighbors within 64 pixels, including across wrapped edges. Cohesion uses a wider, finite perception range. Reused typed arrays reduce temporary allocations.
 
-Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
+The closest-neighbor lists refresh every three physics steps; the broader cohesion calculation refreshes every six. Coarse-cell summaries compute the same weighted attraction without scanning every bird in fully covered cells. Steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
 Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
@@ -82,10 +82,10 @@ Then visit `http://localhost:8000`.
 Run the simulation regression checks with:
 
 ```sh
-node --test tests/flock.cjs tests/neighbors.cjs
+node --test tests/flock.cjs tests/neighbors.cjs tests/view.cjs
 ```
 
-The checks cover exact neighbor selection, wrapped distances, fixed-step timing, local interaction, and simulation stability. They do not require a particular flock silhouette or split. Visual comparison is still needed to judge resemblance to the reference.
+The checks cover exact neighbor selection and cohesion, wrapped distances, fixed-step timing, local interaction, simulation stability, and camera/pointer mapping. They do not require a particular flock silhouette or split. Visual comparison is still needed to judge resemblance to the reference.
 
 ## Files
 
@@ -93,6 +93,7 @@ The checks cover exact neighbor selection, wrapped distances, fixed-step timing,
 - `app.js`: animation loop, drawing, cursor trail, pointer input, and UI.
 - `flock.js`: local flocking, intruder repulsion, flight inertia, and edge wrapping.
 - `neighbors.js`: optimized nearest-neighbor search in the repeating viewport.
+- `view.js`: camera following and screen/world coordinate conversion; no bird steering.
 - `.nojekyll`: serves the repository as plain static files on GitHub Pages.
 
 ## Portfolio integration

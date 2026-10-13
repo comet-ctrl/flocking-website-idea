@@ -10,7 +10,7 @@ function wrappedDelta(delta,extent){
 class Flock {
  constructor(width,height,count,random=Math.random){
   this.w=width;this.h=height;this.accumulator=0;this.neighborTick=0;this.birds=[];
-  this.neighborhood=new NeighborSearch(width,height);
+  this.neighborhood=new NeighborSearch(width,height,300);
   for(let i=0;i<count;i++){
    const angle=random()*Math.PI*2,r=Math.sqrt(random());
    const x=width*(.48+Math.cos(angle)*r*.245),y=height*(.47+Math.sin(angle)*r*.125)+Math.cos(angle)*r*height*.06;
@@ -30,7 +30,8 @@ class Flock {
 
  step(dt,intruder){
   const step=Math.min(dt*60,2),birds=this.birds;
-  if(this.neighborTick++%3===0)this.neighborhood.refresh(birds);
+  const neighborTick=this.neighborTick++;
+  if(neighborTick%3===0)this.neighborhood.refresh(birds,neighborTick%6===0);
   const radius=Math.min(this.w,this.h)*.16*(intruder.down?1.3:1);
   let leadX=(intruder.vx||0)*.22,leadY=(intruder.vy||0)*.22;
   const leadScale=Math.min(1,radius*.95/(Math.hypot(leadX,leadY)||1));
@@ -38,11 +39,11 @@ class Flock {
   const leadSquared=leadX*leadX+leadY*leadY;
 
   for(const p of birds){
-   let ax=0,ay=0,separateX=0,separateY=0,offsetX=0,offsetY=0,velocityX=0,velocityY=0;
+   let ax=0,ay=0,separateX=0,separateY=0,velocityX=0,velocityY=0;
    const found=p.neighborCount;
    for(let k=0;k<found;k++){
     const q=birds[p.neighbors[k]],dx=wrappedDelta(q.x-p.x,this.w),dy=wrappedDelta(q.y-p.y,this.h);
-    offsetX+=dx;offsetY+=dy;velocityX+=q.vx;velocityY+=q.vy;
+    velocityX+=q.vx;velocityY+=q.vy;
     const distance=Math.hypot(dx,dy);
     if(distance<7.8){
      const push=(7.8-distance)/7.8/Math.max(distance,1);
@@ -50,10 +51,12 @@ class Flock {
     }
    }
    if(found){
-    // The same cohesion rule in every direction; only nearby birds contribute.
-    ax=(velocityX/found-p.vx)*.115+offsetX/found*.0026+separateX*.095;
-    ay=(velocityY/found-p.vy)*.115+offsetY/found*.0026+separateY*.095;
+    ax=(velocityX/found-p.vx)*.115+separateX*.095;
+    ay=(velocityY/found-p.vy)*.115+separateY*.095;
    }
+   // See beyond the closest few birds for cohesion, preserving social contact
+   // across the flock without a global center or a prescribed formation.
+   ax+=(p.cohesionX||0)*.0003;ay+=(p.cohesionY||0)*.0003;
 
    let alarm=0;
    if(intruder.active){
