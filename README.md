@@ -45,8 +45,23 @@ Performance depends on device, density, and viewport size; this is not a guarant
 | H | Reveal the quiet interface or toggle manual hiding |
 | Reset | Recreate the flock |
 | Fullscreen | Fill the display where supported |
+| Visuals | Open five independent visual experiments |
+| Original look | Switch all experiments off without restarting the flock |
+| Escape | Close the visual experiments panel |
 
-The interface fades after three seconds, leaving the flock unobstructed. Move near the bottom edge, press H or Tab, or touch the canvas to reveal it. Focused or hovered controls stay visible. The animation starts paused and the interface remains visible if the browser reports a reduced-motion preference.
+The interface fades after three seconds, leaving the flock unobstructed. Move near the bottom edge, press H or Tab, or touch the canvas to reveal it. Focused or hovered controls and an open Visuals panel stay visible. The animation starts paused and the interface remains visible if the browser reports a reduced-motion preference.
+
+## Visual experiments
+
+All five experiments start **off** on a first visit. Each button switches only its own effect, so you can compare them individually or combine them. Choices are saved in this browser when local storage is available. **Original look** restores the accepted silver rendering without resetting the birds or changing the speed. Pausing lets you compare effects on the same frame.
+
+- **Banking highlights:** changes in heading catch extra white light along the bird's body. The light is eased over time so it travels with turns.
+- **Red light spill:** nearby birds pick up a rose tint that fades with distance from the arrow.
+- **Stronger depth:** distant birds become smaller and dimmer, while nearer ones show longer bright tips.
+- **Subtle wing shapes:** a fixed subset of nearby birds gains tiny curved wings, drawn in one batch.
+- **Film grain:** a very faint, cached noise texture overlays the scene; it creates no new particles.
+
+These are drawing changes only. They do not alter positions, flock rules, bird count, or the 2.2× default. Disabled effects skip their drawing work. The buttons remain available while the effects are being evaluated; an approved effect can later become permanent and have its button removed.
 
 ## The website idea
 

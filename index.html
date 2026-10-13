@@ -19,16 +19,45 @@ button{padding:8px 11px}
 button:hover,.speed select:hover{background:#20252a;color:#f4f5f6;border-color:#ffffff35}
 button:focus-visible,.speed select:focus-visible{background:#20252a;color:#fff;outline:1px solid #ee7a8d;outline-offset:3px}
 button[aria-pressed=true]{color:#ee8d9d;border-color:#ee7a8d55}
+.visual-panel{position:absolute;right:0;bottom:calc(100% + 12px);width:320px;max-width:calc(100vw - 44px);max-height:calc(100dvh - 110px);overflow:auto;overscroll-behavior:contain;pointer-events:auto;padding:16px;border:1px solid #ffffff1c;border-radius:12px;background:#10151a;box-shadow:0 14px 50px #0006;scrollbar-width:thin;scrollbar-color:#64717d #10151a}
+.visual-panel[hidden]{display:none}
+.visual-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.visual-heading h2{margin:0;font-size:12px;font-weight:500;letter-spacing:.08em}
+.visual-heading button{min-width:34px;padding:6px;font-size:18px;line-height:1}
+.visual-intro{font-size:11px;line-height:1.55;color:#9ba4ad;margin:9px 0 14px}
+.effect-options{display:grid;gap:7px}
+.effect-option{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;align-items:center;width:100%;min-height:64px;padding:10px 12px;text-align:left;background:#ffffff03}
+.effect-title{font-size:11px;color:#d5dce2}
+.effect-state{font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#84909b}
+.effect-description{grid-column:1/-1;font-size:10px;line-height:1.45;letter-spacing:0;color:#96a0a9}
+.effect-option[aria-pressed=true]{background:#ee7a8d0a}
+.effect-option[aria-pressed=true] .effect-state{color:#f59cab}
+.visual-bottom{display:flex;justify-content:flex-end;margin-top:13px}
+#visuals[aria-expanded=true]{color:#ee8d9d;border-color:#ee7a8d55}
 body.ui-quiet header,body.ui-quiet .controls{opacity:0}
 body.ui-quiet .controls,body.ui-quiet .controls *{pointer-events:none}
 body.ui-quiet .controls:focus-within{opacity:1}
 body.ui-quiet .controls:focus-within .buttons,body.ui-quiet .controls:focus-within .buttons *{pointer-events:auto}
+body.ui-quiet .controls:focus-within .visual-panel,body.ui-quiet .controls:focus-within .visual-panel *{pointer-events:auto}
 body.ui-hidden header,body.ui-hidden .controls{visibility:hidden;opacity:0;pointer-events:none}
-@media(max-width:600px){header{left:22px;top:24px}.controls{left:22px;right:22px;bottom:20px;align-items:start;flex-direction:column;gap:12px}.hint{font-size:9px}.buttons{gap:5px}button{padding:8px 10px}}
-@media(pointer:coarse){button,.speed select{min-height:44px}button{padding:10px 12px}}
+@media(max-width:600px){header{left:22px;top:24px}.controls{left:22px;right:22px;bottom:20px;align-items:start;flex-direction:column;gap:12px}.hint{font-size:9px}.buttons{gap:5px}button{padding:8px 10px}.visual-panel{max-height:calc(100dvh - 210px);padding:13px}.effect-option{padding:10px 12px}}
+@media(max-height:480px){.visual-panel{position:fixed;top:16px;right:22px;bottom:auto;max-height:calc(100dvh - 32px)}}
+@media(pointer:coarse){button,.speed select{min-height:44px}button{padding:10px 12px}.visual-heading button{min-width:44px}}
 @media(prefers-reduced-motion:reduce){header,.controls{transition:none}}
 </style></head><body>
 <canvas id="field" aria-label="Interactive silver particle field. Move your pointer to guide the red arrow. Hold to scatter particles."></canvas>
 <header><h1><span class="dot"></span>RED ARROW</h1><p>One intruder. A thousand reactions.</p></header>
-<div class="controls"><div class="hint" id="hint">MOVE TO DISTURB &nbsp; · &nbsp; HOLD TO SCATTER<br>SPACE TO PAUSE &nbsp; · &nbsp; H TO HIDE CONTROLS</div><div class="buttons"><label class="speed">Speed <select id="speed" aria-label="Simulation speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="1.8">1.8×</option><option value="2.2" selected>2.2×</option></select></label><button id="mode" aria-pressed="false">Demo intruder</button><button id="pause" aria-pressed="false">Pause</button><button id="reset">Reset</button><button id="full">Fullscreen</button></div></div>
+<div class="controls"><div class="hint" id="hint">MOVE TO DISTURB &nbsp; · &nbsp; HOLD TO SCATTER<br>SPACE TO PAUSE &nbsp; · &nbsp; H TO HIDE CONTROLS</div><div class="buttons"><label class="speed">Speed <select id="speed" aria-label="Simulation speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="1.8">1.8×</option><option value="2.2" selected>2.2×</option></select></label><button id="mode" aria-pressed="false">Demo intruder</button><button id="pause" aria-pressed="false">Pause</button><button id="reset">Reset</button><button id="full">Fullscreen</button><button id="visuals" aria-expanded="false" aria-controls="visual-panel">Visuals</button></div>
+<section id="visual-panel" class="visual-panel" aria-labelledby="visual-title" aria-describedby="visual-intro" hidden>
+  <div class="visual-heading"><h2 id="visual-title">Try a visual effect</h2><button type="button" id="close-visuals" aria-label="Close visual effects">×</button></div>
+  <p id="visual-intro" class="visual-intro">Switch effects on and off to compare. You can combine your favorites.</p>
+  <div class="effect-options" role="group" aria-label="Optional visual effects">
+    <button type="button" class="effect-option" data-effect="banking" aria-pressed="false" aria-labelledby="banking-label" aria-describedby="banking-description"><span id="banking-label" class="effect-title">Banking highlights</span><span class="effect-state" data-state aria-hidden="true">Off</span><span id="banking-description" class="effect-description">Silver flashes travel through each turn.</span></button>
+    <button type="button" class="effect-option" data-effect="red" aria-pressed="false" aria-labelledby="red-label" aria-describedby="red-description"><span id="red-label" class="effect-title">Red light spill</span><span class="effect-state" data-state aria-hidden="true">Off</span><span id="red-description" class="effect-description">Birds near your arrow catch a rose tint.</span></button>
+    <button type="button" class="effect-option" data-effect="depth" aria-pressed="false" aria-labelledby="depth-label" aria-describedby="depth-description"><span id="depth-label" class="effect-title">Stronger depth</span><span class="effect-state" data-state aria-hidden="true">Off</span><span id="depth-description" class="effect-description">Soft distant birds; crisp silver in front.</span></button>
+    <button type="button" class="effect-option" data-effect="wings" aria-pressed="false" aria-labelledby="wings-label" aria-describedby="wings-description"><span id="wings-label" class="effect-title">Subtle wing shapes</span><span class="effect-state" data-state aria-hidden="true">Off</span><span id="wings-description" class="effect-description">A few nearby birds reveal curved wings.</span></button>
+    <button type="button" class="effect-option" data-effect="grain" aria-pressed="false" aria-labelledby="grain-label" aria-describedby="grain-description"><span id="grain-label" class="effect-title">Film grain</span><span class="effect-state" data-state aria-hidden="true">Off</span><span id="grain-description" class="effect-description">A faint cinematic texture in the darkness.</span></button>
+  </div>
+  <div class="visual-bottom"><button type="button" id="original-look">Original look</button></div>
+</section></div>
 <script src="flock.js"></script><script src="flock-runner.js"></script><script src="app.js"></script></body></html>
