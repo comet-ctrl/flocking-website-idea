@@ -8,14 +8,16 @@ const close=(actual,expected,tolerance=1e-9)=>assert.ok(Math.abs(actual-expected
 
 function setup(states,width=1280,height=720){
  const flock=new Flock(width,height,states.length,()=>.5);
+ // Controlled force experiments omit independent flight fluctuations.
+ flock.wanderStrength=0;
  flock.birds.forEach((p,i)=>{
-  Object.assign(p,{vx:2.1,vy:0,ax:0,ay:0},states[i]);
+  Object.assign(p,{vx:2.1,vy:0,ax:0,ay:0,bank:0,wander:0},states[i]);
   p.px=p.x;p.py=p.y;p.pvx=p.vx;p.pvy=p.vy;
   p.history=Float64Array.from({length:16},(_,j)=>j%2?p.y:p.x);
  });
  return flock;
 }
-function physicalState(p){return {x:p.x,y:p.y,vx:p.vx,vy:p.vy,ax:p.ax,ay:p.ay}}
+function physicalState(p){return {x:p.x,y:p.y,vx:p.vx,vy:p.vy,ax:p.ax,ay:p.ay,bank:p.bank,wander:p.wander,noiseState:p.noiseState}}
 
 test('fixed physics steps agree at 30, 60 and 120 Hz, including 2.2× pace',()=>{
  function run(hz,pace){
@@ -70,7 +72,7 @@ test('distant birds cannot steer a local group through global cohesion or alignm
  }
 });
 
-test('an isolated bird travels straight through screen edges without a shared bank',()=>{
+test('an isolated bird without fluctuations travels straight through screen edges',()=>{
  const f=setup([{x:1190,y:790}],1200,800),p=f.birds[0];
  for(let tick=0;tick<200;tick++)f.step(1/60,quiet);
  close(p.x,wrap(1190+200*2.1,1200));close(p.y,790);close(p.vx,2.1);close(p.vy,0);
@@ -169,4 +171,45 @@ test('flight remains finite and bounded at wide, narrow and tiny viewport sizes'
   }
  }
  const empty=new Flock(1280,720,0);assert.doesNotThrow(()=>empty.advance(1/60,quiet));
+});
+
+test('a local turn travels through the flock with a delay and retains its strength',()=>{
+ // A long connected strip makes the distant cohort several neighbor hops away.
+ // Matched controls retain the same constructor bank and noise states, so the
+ // measured heading difference comes from the local impulse, not background motion.
+ const columns=80,rows=8,count=columns*rows,cohortSize=10*rows;
+ function strip(perturbed){
+  let seed=123;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
+  const f=new Flock(2200,1400,count,random);
+  f.birds.forEach((p,i)=>{
+   const column=Math.floor(i/rows),row=i%rows;
+   const heading=perturbed&&column>=columns-8?.3:0;
+   Object.assign(p,{x:700+column*10+(random()-.5)*.1,y:650+row*10+(random()-.5)*.1,vx:2.1*Math.cos(heading),vy:2.1*Math.sin(heading),ax:0,ay:0});
+   p.px=p.x;p.py=p.y;p.pvx=p.vx;p.pvy=p.vy;
+   p.history=Float64Array.from({length:16},(_,j)=>j%2?p.y:p.x);
+  });
+  return f;
+ }
+ const control=strip(false),turned=strip(true);
+ const cohorts=[1,4,7].map(bin=>({start:(7-bin)*cohortSize,arrival:null,peak:0,peakTick:0,earlyPeak:0}));
+ for(let tick=0;tick<=720;tick++){
+  for(const cohort of cohorts){
+   let cx=0,cy=0,tx=0,ty=0;
+   for(let i=cohort.start;i<cohort.start+cohortSize;i++){
+    const c=control.birds[i],p=turned.birds[i];cx+=c.vx;cy+=c.vy;tx+=p.vx;ty+=p.vy;
+   }
+   const angle=Math.atan2(ty,tx)-Math.atan2(cy,cx),response=Math.abs(Math.atan2(Math.sin(angle),Math.cos(angle)));
+   if(cohort.arrival===null&&response>=.01)cohort.arrival=tick;
+   if(response>cohort.peak){cohort.peak=response;cohort.peakTick=tick}
+   if(tick<=60)cohort.earlyPeak=Math.max(cohort.earlyPeak,response);
+  }
+  if(tick<720){control.step(1/60,quiet);turned.step(1/60,quiet)}
+ }
+ const [near,middle,far]=cohorts;
+ assert.ok(far.earlyPeak<.001,'a local disturbance must not turn the distant flock immediately');
+ assert.ok(cohorts.every(c=>c.arrival!==null),'the turn must reach all three cohorts');
+ assert.ok(middle.arrival>near.arrival+30&&far.arrival>middle.arrival+30,'turn arrival must be delayed across the local network');
+ assert.ok(middle.peakTick>near.peakTick+30&&far.peakTick>middle.peakTick+30,'the heading crest must travel rather than occur everywhere together');
+ assert.ok(far.peak>.07&&far.peak>near.peak*.4,'the distant turn must remain visible rather than diffuse away');
+ assert.ok(cohorts.every(c=>c.peak<.5),'the disturbance must not grow into an unstable spin');
 });

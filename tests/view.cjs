@@ -12,6 +12,12 @@ test('the view stays fixed while a flock travels within its padding',()=>{
  }
 });
 
+test('a visible flock that already fits is not reframed around a different periodic arc',()=>{
+ const view=new FlockView(1280,720);view.x=640;view.y=360;
+ view.follow([{x:140,y:360},{x:1140,y:360}],1/60);
+ close(view.x,640);close(view.y,360);close(view.vx,0);close(view.vy,0);
+});
+
 test('an edge violation pans only toward the violated side without recentering',()=>{
  for(const side of [-1,1]){
   const view=new FlockView(1280,720),initial={x:view.x,y:view.y},overshoot=60;
@@ -31,8 +37,72 @@ test('an edge violation pans only toward the violated side without recentering',
 
 test('bounds too wide for the padding are framed symmetrically without zoom',()=>{
  const view=new FlockView(1280,720);view.x=640;view.y=360;
- view.follow([{x:20,y:360},{x:1260,y:360}],1/60);
+ // The unique largest gap is 200 px across the seam; the covering arc is
+ // genuinely 1080 px wide, exceeding the 1075.2 px padded viewport.
+ view.follow([100,280,460,640,820,1000,1180].map(x=>({x,y:360})),1/60);
  close(view.x,640);close(view.y,360);close(view.w,1280);close(view.h,720);
+});
+
+test('a compact flock opposite the camera is not mistaken for a screen-wide flock',()=>{
+ const view=new FlockView(1280,720);view.x=640;view.y=360;
+ const birds=[{x:10,y:10},{x:1270,y:710}],before=structuredClone(birds);
+ const initial={x:view.x,y:view.y};
+ view.follow(birds,1/60);
+ assert.ok(view.x!==initial.x&&view.y!==initial.y,'both seam crossings must trigger a correction');
+ assert.ok(Math.abs(view.delta(view.x-initial.x,1280))<20);
+ assert.ok(Math.abs(view.delta(view.y-initial.y,720))<20);
+ // Edge correction remains eased, so crossing the last few pixels of the
+ // display seam can take another frame rather than snapping the camera.
+ view.follow(birds,1/60);view.follow(birds,1/60);
+ close(Math.abs(view.screenX(10)-view.screenX(1270)),20);
+ close(Math.abs(view.screenY(10)-view.screenY(710)),20);
+ for(let tick=0;tick<180;tick++)view.follow(birds,1/60);
+ for(const p of birds){
+  assert.ok(view.screenX(p.x)>=1280*.08-1e-7&&view.screenX(p.x)<=1280*.92+1e-7);
+  assert.ok(view.screenY(p.y)>=720*.08-1e-7&&view.screenY(p.y)<=720*.92+1e-7);
+  close(view.delta(view.worldX(view.screenX(p.x))-p.x,1280),0);
+  close(view.delta(view.worldY(view.screenY(p.y))-p.y,720),0);
+ }
+ assert.deepEqual(birds,before);
+ close(view.w,1280);close(view.h,720);
+});
+
+test('covering-arc selection is independent of bird order and equivalent wrapped positions',()=>{
+ const a=new FlockView(1280,720),b=new FlockView(1280,720);
+ a.x=b.x=640;a.y=b.y=360;
+ const birds=[{x:1270,y:705},{x:4,y:9},{x:12,y:15},{x:1265,y:711}];
+ const translated=birds.toReversed().map(p=>({x:p.x+3*1280,y:p.y-4*720}));
+ for(let tick=0;tick<180;tick++){
+  a.follow(birds,1/60);b.follow(translated,1/60);
+  close(a.x,b.x);close(a.y,b.y);close(a.vx,b.vx);close(a.vy,b.vy);
+ }
+});
+
+test('repeated arc measurement reuses buffers and supports changing flock size',()=>{
+ const view=new FlockView(1280,720),birds=[{x:10,y:10},{x:1270,y:710}];
+ view.follow(birds,1/60);const xs=view.axisX,ys=view.axisY;
+ view.follow(birds,1/60);assert.equal(view.axisX,xs);assert.equal(view.axisY,ys);
+ view.follow([],1/60);close(view.vx,0);close(view.vy,0);
+ view.follow(birds.slice(0,1),1/60);assert.equal(view.axisX.length,1);assert.equal(view.axisY.length,1);
+ assert.ok([view.x,view.y,view.vx,view.vy].every(Number.isFinite));
+});
+
+test('a nearly full-axis flock does not make the camera chase changing tiny gaps',()=>{
+ const view=new FlockView(1280,720);view.x=640;view.y=200;
+ const birds=Array.from({length:120},(_,i)=>({x:640,y:i*6}));
+ for(let frame=0;frame<120;frame++){
+  // Each frame changes which small empty gap is largest.
+  birds.forEach((p,i)=>{p.y=i*6+Math.sin(i*.73+frame*.21)*.6});
+  view.follow(birds,1/60);
+  close(view.x,640);close(view.y,200);close(view.vx,0);close(view.vy,0);
+ }
+ // An intermediate gap remains too ambiguous to resume following; this is
+ // deliberately between the separate close and reopen thresholds.
+ const intermediate=Array.from({length:65},(_,i)=>({x:640,y:100+i*10}));
+ view.follow(intermediate,1/60);close(view.y,200);close(view.vy,0);
+ // Once a genuinely compact flock exists again, ordinary edge following resumes.
+ view.follow([{x:640,y:530},{x:640,y:550}],1/60);
+ assert.ok(view.y>200);assert.ok(view.vy>0);
 });
 
 test('a flock crossing the physical seam stays together on screen',()=>{
