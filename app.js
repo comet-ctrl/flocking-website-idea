@@ -18,8 +18,27 @@ function draw(dt){
  if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
  if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
- for(const p of particles){
-  const speed=Math.hypot(p.vx,p.vy)||1;const len=Math.min(13,2.8+speed*2.2);ctx.strokeStyle=`rgba(218,233,246,${p.a})`;ctx.lineWidth=p.size;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx/speed*len,p.y-p.vy/speed*len);ctx.stroke();
+ // Blend physics poses and batch similar silver strokes into four draw calls.
+ const alpha=flock.renderAlpha;
+ for(let band=0;band<4;band++){
+  ctx.strokeStyle=`rgba(218,233,246,${.38+band*.14})`;ctx.lineWidth=.68+band*.12;ctx.beginPath();
+  for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
+   const x=p.px+(p.x-p.px)*alpha,y=p.py+(p.y-p.py)*alpha;
+   const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=2.8+speed*2.2;
+   ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
+  }ctx.stroke();
+ }
+ // Faint 45 ms paths from actual past positions, not accumulated canvas blur.
+ // Real-time duration keeps trail lengths consistent across refresh rates.
+ for(let segment=0;segment<3;segment++){
+  ctx.strokeStyle=`rgba(190,214,239,${.10-segment*.03})`;ctx.lineWidth=.65;ctx.beginPath();
+  for(const p of particles){
+   for(let end=0;end<2;end++){
+    const age=Math.min(7,1-alpha+(segment+end)*.015*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
+    const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
+    if(end)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+   }
+  }ctx.stroke();
  }
  if(dt||!tail.length){tail.unshift({x:mouse.x,y:mouse.y});if(tail.length>48)tail.pop()}
  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#ff4169';ctx.shadowBlur=12;

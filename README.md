@@ -60,6 +60,10 @@ The speed control advances the whole simulation faster, preserving the relations
 
 Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
+Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 45 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
+
+After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. Predictive edge steering begins earlier and increases smoothly as birds approach the boundary. The default pace remains 1.8×.
+
 ## Run locally
 
 No dependencies, backend, API keys, or build step are needed. Open `index.html` in a browser, or serve this directory with any static web server:

@@ -6,7 +6,7 @@ class Flock {
    const angle=random()*Math.PI*2,r=Math.sqrt(random());
    const x=width*(.48+Math.cos(angle)*r*.245),y=height*(.47+Math.sin(angle)*r*.125)+Math.cos(angle)*r*height*.06;
    const heading=-.2+(random()-.5)*.12,speed=2.05+random()*.12;
-   this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,nx:0,ny:0,ax:0,ay:0,neighbors:new Int32Array(7),neighborCount:0,a:.36+random()*.5,size:.65+random()*.45});
+   this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,px:x,py:y,pvx:Math.cos(heading)*speed,pvy:Math.sin(heading)*speed,history:Float64Array.from({length:16},(_,j)=>j%2?y:x),stress:0,nx:0,ny:0,ax:0,ay:0,neighbors:new Int32Array(7),neighborCount:0,a:.36+random()*.5,size:.65+random()*.45});
   }
  }
  // Scale simulation time, not just velocity: preserve turning and avoidance.
@@ -16,6 +16,7 @@ class Flock {
   const tick=1/60;
   while(this.accumulator+1e-10>=tick){this.step(tick,intruder);this.accumulator-=tick}
  }
+ get renderAlpha(){return Math.max(0,Math.min(1,this.accumulator*60))}
  step(dt,intruder){
   const step=Math.min(dt*60,2);this.time+=dt;
   // Reuse neighbor identities for three ticks; forces use current positions each tick.
@@ -44,19 +45,19 @@ class Flock {
    for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<9){const push=(9-d)/9;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
    if(found){ax+=(vx/found-p.vx)*.085+(px/found-p.x)*.0024+sx*.095;ay+=(vy/found-p.vy)*.085+(py/found-p.y)*.0024+sy*.095}
    // Gentle group cohesion bridges a split without locking birds to a path.
-   const centerDistance=Math.hypot(cx-p.x,cy-p.y),gather=Math.min(.055,centerDistance*.00018);
-   ax+=(cx-p.x)/Math.max(centerDistance,1)*gather+(meanVX-p.vx)*.014;
-   ay+=(cy-p.y)/Math.max(centerDistance,1)*gather+(meanVY-p.vy)*.014;
+   const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.75,gather=Math.min(.048,centerDistance*.00016)*rejoin;
+   ax+=(cx-p.x)/Math.max(centerDistance,1)*gather+(meanVX-p.vx)*.014*rejoin;
+   ay+=(cy-p.y)/Math.max(centerDistance,1)*gather+(meanVY-p.vy)*.014*rejoin;
    // Begin a shared bank early, before the leading birds reach the edge.
-   const margin=Math.min(210,this.w*.24,this.h*.24),lookX=cx+meanVX*55,lookY=cy+meanVY*55;
+   const margin=Math.min(245,this.w*.28,this.h*.28),lookX=cx+meanVX*70,lookY=cy+meanVY*70;
    const edgeRisk=Math.max(0,(margin-lookX)/margin,(lookX-(this.w-margin))/margin,(margin-lookY)/margin,(lookY-(this.h-margin))/margin);
    const groupAngle=Math.atan2(meanVY,meanVX),inwardAngle=Math.atan2(this.h*.5-cy,this.w*.5-cx),bankDelta=Math.atan2(Math.sin(inwardAngle-groupAngle),Math.cos(inwardAngle-groupAngle));
    const bank=Math.min(1,edgeRisk*3)*.065*(bankDelta>=0?1:-1);
    ax+=-Math.sin(groupAngle)*bank;ay+=Math.cos(groupAngle)*bank;
-   const edge=Math.min(220,this.w*.35,this.h*.35),edgeDistance=Math.min(p.x,this.w-p.x,p.y,this.h-p.y);
+   const edge=Math.min(220,this.w*.35,this.h*.35),edgeDistance=Math.min(p.x+p.vx*30,this.w-p.x-p.vx*30,p.y+p.vy*30,this.h-p.y-p.vy*30);
    if(edgeDistance<edge){
     const birdAngle=Math.atan2(p.vy,p.vx),homeAngle=Math.atan2(this.h*.5-p.y,this.w*.5-p.x),difference=Math.atan2(Math.sin(homeAngle-birdAngle),Math.cos(homeAngle-birdAngle));
-    const urgency=Math.min(1,(edge-edgeDistance)/70),turn=Math.max(-1,Math.min(1,difference*2))*.095;
+    const proximity=Math.max(0,Math.min(1,(edge-edgeDistance)/edge)),urgency=proximity*proximity*(3-2*proximity),turn=Math.max(-1,Math.min(1,difference*2))*.095;
     ax=ax*(1-urgency)-Math.sin(birdAngle)*turn*urgency;
     ay=ay*(1-urgency)+Math.cos(birdAngle)*turn*urgency;
    }
@@ -77,6 +78,8 @@ class Flock {
     ax+=normalX*side*split+dx/Math.max(d,1)*radial;
     ay+=normalY*side*split+dy/Math.max(d,1)*radial;
    }
+   // Relax global attraction after a scare; local neighbors still hold each stream.
+   const stressTarget=alarm>.03?1:0;p.stress+=(stressTarget-p.stress)*(1-Math.exp(-dt*(stressTarget?12:.65)));
    const force=Math.hypot(ax,ay),limit=.065+alarm*.20;if(force>limit){ax*=limit/force;ay*=limit/force}
    const steeringBlend=1-Math.exp(-dt*8);p.ax+=(ax-p.ax)*steeringBlend;p.ay+=(ay-p.ay)*steeringBlend;
    let nextX=p.vx+p.ax*step,nextY=p.vy+p.ay*step;
@@ -87,8 +90,9 @@ class Flock {
    p.nx=nextX/speed*target;p.ny=nextY/speed*target;
   }
   // Commit all velocities together, so array order cannot bias neighbors.
-  for(const p of birds){p.vx=p.nx;p.vy=p.ny;p.x+=p.vx*step;p.y+=p.vy*step;
+  for(const p of birds){p.px=p.x;p.py=p.y;p.pvx=p.vx;p.pvy=p.vy;p.vx=p.nx;p.vy=p.ny;p.x+=p.vx*step;p.y+=p.vy*step;
    if(p.x<2){p.x=2;}if(p.x>this.w-2){p.x=this.w-2;}if(p.y<2){p.y=2;}if(p.y>this.h-2){p.y=this.h-2;}
+   p.history.copyWithin(2,0,14);p.history[0]=p.x;p.history[1]=p.y;
   }
  }
 }
