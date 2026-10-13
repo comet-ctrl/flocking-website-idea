@@ -15,7 +15,7 @@ Each bird has a position, velocity, and turning momentum in three dimensions. Yo
 The flock follows local rules:
 
 1. **Leave room.** A bird moves away from its closest neighbors when they come within 28 world units. Slightly closer personal spacing makes the flock denser while retaining room for birds occupying a volume rather than a flat plane.
-2. **Pass turns along.** A spatial grid finds the seven closest birds within 120 units in 3D. Nearby birds exchange equal and opposite turning forces. Each bird retains its own angular momentum, so a bend can travel through the flock instead of rotating everyone together. Stronger sharing of turning momentum and gentler heading agreement allow neighboring sections to enter a bend at different times.
+2. **Pass turns along.** A spatial search tree finds the seven closest birds within 120 units in 3D. It divides the volume into smaller regions so the search can skip regions that cannot contain a closer bird. Nearby birds exchange equal and opposite turning forces. Each bird retains its own angular momentum, so a bend can travel through the flock instead of rotating everyone together. Stronger sharing of turning momentum and gentler heading agreement allow neighboring sections to enter a bend at different times.
 3. **Stay with the nearby flock.** Birds within 300 units attract one another, with influence fading to zero at that distance. Attraction mainly steers the bird; 35% of its component along the bird's forward direction remains for speed adjustment. This modest catch-up response reduces sparse tails without increasing the inward steering that can tighten bends.
 4. **React to the intruder.** Mouse velocity extends the arrow's danger zone up to 0.2 seconds ahead, with a distance cap. Birds are repelled from the nearest point on that predicted path, through the entire depth of the flock. The stronger mouse response is retained, including the extra acceleration allowance for a close encounter. No left/right side or number of streams is assigned. Holding the pointer increases avoidance.
 5. **Fly with inertia.** Acceleration eases toward its target. Turning momentum relaxes between nudges, with a modest limit on the stored rotation to reduce lingering tight curls. Small independent fluctuations allow local variation. Self-propulsion maintains a cruising speed; a head-on threat can slow a bird down.
@@ -35,7 +35,7 @@ Each bird is a fine tapered silver-blue stroke with a warm white tip, stable bri
 
 Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS.
 
-The cohesion search packs nearby positions in contiguous typed arrays, retaining the original summation order. Grid coordinates and per-step constants are reused. These changes reduce computation without changing the physical rules or trajectories.
+The cohesion search packs nearby positions in contiguous typed arrays, retaining the original summation order. The nearest-neighbor tree reuses storage and the previous seven neighbors establish a safe search bound; every result is still an exact nearest-neighbor query. Per-step constants are reused, and bounded flight vectors use direct square-root lengths. These changes preserve the physical rules and update frequency. Small floating-point rounding differences and equally distant neighbor ties can make individual paths diverge over time in this chaotic simulation; replay is not bit-identical.
 
 ## Controls
 

@@ -5,16 +5,9 @@ class Flock{
  constructor(w,h,count,random=Math.random){
   this.w=w;this.h=h;this.depth=180;this.accumulator=0;this.tick=0;this.birds=[];this.wanderStrength=.000004;
   this.edgeInset=Math.min(12,w*.08,h*.08);this.contacts=0;
-  this.cell=18;this.cols=Math.ceil(w/this.cell);this.rows=Math.ceil(h/this.cell);this.layers=Math.ceil(this.depth/this.cell);
-  this.gridX=new Int32Array(count);this.gridY=new Int32Array(count);this.gridZ=new Int32Array(count);
-  this.heads=new Int32Array(this.cols*this.rows*this.layers);this.next=new Int32Array(count);
-  this.offsets=[];
-  const reach=Math.ceil(120/this.cell);
-  for(let z=-reach;z<=reach;z++)for(let y=-reach;y<=reach;y++)for(let x=-reach;x<=reach;x++){
-   const a=Math.max(0,Math.abs(x)-1)*this.cell,b=Math.max(0,Math.abs(y)-1)*this.cell,c=Math.max(0,Math.abs(z)-1)*this.cell;
-   if(a*a+b*b+c*c<=120*120)this.offsets.push({x,y,z,d:a*a+b*b+c*c});
-  }
-  this.offsets.sort((a,b)=>a.d-b.d);
+  // Rebuild an exact median-partition tree; it searches the same seven nearest birds.
+  this.kdIds=new Int32Array(count);this.kdPositions=new Float64Array(count*3);
+  this.kdLeft=new Int32Array(count);this.kdRight=new Int32Array(count);this.kdAxis=new Uint8Array(count);this.kdStack=new Int32Array(64);this.kdPlanes=new Float64Array(64);
   this.distances=new Float64Array(7);this.degrees=new Uint16Array(count);
   this.edgeA=new Uint32Array(count*7);this.edgeB=new Uint32Array(count*7);this.edgeWeight=new Float64Array(count*7);this.edgeCount=0;
   this.torqueX=new Float64Array(count);this.torqueY=new Float64Array(count);this.torqueZ=new Float64Array(count);
@@ -45,28 +38,42 @@ class Flock{
  advance(elapsed,intruder,pace=2.2){this.accumulator+=clamp(elapsed,0,.1)*pace;while(this.accumulator+1e-10>=1/60){this.step(1/60,intruder);this.accumulator-=1/60}}
  get renderAlpha(){return clamp(this.accumulator*60,0,1)}
  refreshNeighbors(){
-  const b=this.birds,c=this.cell,cols=this.cols,rows=this.rows,layers=this.layers,heads=this.heads,next=this.next,dist=this.distances;
-  heads.fill(-1);
-  for(let i=0;i<b.length;i++){
-   const p=b[i],x=clamp(Math.floor(p.x/c),0,cols-1),y=clamp(Math.floor(p.y/c),0,rows-1),z=clamp(Math.floor(p.z/c),0,layers-1),at=(z*rows+y)*cols+x;
-   next[i]=heads[at];heads[at]=i;this.gridX[i]=x;this.gridY[i]=y;this.gridZ[i]=z;
+  const b=this.birds,dist=this.distances,ids=this.kdIds,positions=this.kdPositions,left=this.kdLeft,right=this.kdRight,axes=this.kdAxis;
+  for(let i=0;i<b.length;i++){ids[i]=i;positions[i*3]=b[i].x;positions[i*3+1]=b[i].y;positions[i*3+2]=b[i].z}
+  // Median partitions bound exact Euclidean nearest-neighbor queries.
+  function build(lo,hi,axis){
+   if(lo>hi)return -1;
+   const mid=(lo+hi)>>1;let l=lo,r=hi;
+   while(l<r){
+    const pivot=positions[ids[(l+r)>>1]*3+axis];let i=l,j=r;
+    while(i<=j){while(positions[ids[i]*3+axis]<pivot)i++;while(positions[ids[j]*3+axis]>pivot)j--;if(i<=j){const t=ids[i];ids[i++]=ids[j];ids[j--]=t}}
+    if(mid<=j)r=j;else if(mid>=i)l=i;else break;
+   }
+   axes[mid]=axis;axis=(axis+1)%3;
+   left[mid]=build(lo,mid-1,axis);right[mid]=build(mid+1,hi,axis);return mid;
   }
+  const root=build(0,b.length-1,0),stack=this.kdStack,planes=this.kdPlanes;
   for(let i=0;i<b.length;i++){
-   const p=b[i],gx=this.gridX[i],gy=this.gridY[i],gz=this.gridZ[i];
-   let count=0,cutoff=120*120;dist.fill(Infinity);
-   for(const offset of this.offsets){
-    if(offset.d>cutoff)break;
-    const x=gx+offset.x,y=gy+offset.y,z=gz+offset.z;
-    if(x<0||y<0||z<0||x>=cols||y>=rows||z>=layers)continue;
-    const head=heads[(z*rows+y)*cols+x];if(head===-1)continue;
-    const cx=Math.max(0,Math.abs((x+.5)*c-p.x)-c*.5),cy=Math.max(0,Math.abs((y+.5)*c-p.y)-c*.5),cz=Math.max(0,Math.abs((z+.5)*c-p.z)-c*.5);
-    if(cx*cx+cy*cy+cz*cz>cutoff)continue;
-    for(let j=head;j!==-1;j=next[j]){
-     if(i===j)continue;const q=b[j],dx=q.x-p.x,dy=q.y-p.y,dz=q.z-p.z,d2=dx*dx+dy*dy+dz*dz;
-     if(d2>=cutoff)continue;
+   const p=b[i],px=p.x,py=p.y,pz=p.z;let count=0,cutoff=120*120;
+   dist.fill(Infinity);
+   // Old neighbors only bound the search; all nearer candidates are still
+   // visited. A tiny margin keeps the old farthest bird eligible.
+   if(p.neighborCount===7){
+    let farthest=0;
+    for(let k=0;k<7;k++){const j=p.neighbors[k]*3,dx=positions[j]-px,dy=positions[j+1]-py,dz=positions[j+2]-pz;farthest=Math.max(farthest,dx*dx+dy*dy+dz*dz)}
+    cutoff=Math.min(cutoff,farthest+1e-8);
+   }
+   let node=root,top=0;
+   while(node!==-1||top){
+    if(node===-1){top--;if(planes[top]>cutoff)continue;node=stack[top]}
+    const j=ids[node],at=j*3,dx=positions[at]-px,dy=positions[at+1]-py,dz=positions[at+2]-pz,d2=dx*dx+dy*dy+dz*dz;
+    if(j!==i&&d2<cutoff){
      let k=Math.min(count,6);while(k>0&&d2<dist[k-1]){dist[k]=dist[k-1];p.neighbors[k]=p.neighbors[k-1];k--}
      dist[k]=d2;p.neighbors[k]=j;count=Math.min(7,count+1);if(count===7)cutoff=dist[6];
     }
+    const axis=axes[node],delta=axis===0?dx:axis===1?dy:dz,near=delta>0?left[node]:right[node],far=delta>0?right[node]:left[node];
+    if(far!==-1&&delta*delta<=cutoff){stack[top]=far;planes[top++]=delta*delta}
+    node=near;
    }
    p.neighborCount=count;
   }
@@ -134,7 +141,8 @@ class Flock{
   const tick=this.tick++;if(tick%3===0)this.refreshNeighbors();if(tick===0)this.refreshCohesion();else this.refreshCohesion(tick%6,6);
   const b=this.birds,n=b.length,tx=this.torqueX,ty=this.torqueY,tz=this.torqueZ;
   tx.fill(0);ty.fill(0);tz.fill(0);
-  for(let i=0;i<n;i++){const p=b[i],s=Math.hypot(p.vx,p.vy,p.vz)||1;this.speeds[i]=s;this.unitX[i]=p.vx/s;this.unitY[i]=p.vy/s;this.unitZ[i]=p.vz/s}
+  // These bounded vectors need no overflow-rescaling in their Euclidean norms.
+  for(let i=0;i<n;i++){const p=b[i],s=Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz)||1;this.speeds[i]=s;this.unitX[i]=p.vx/s;this.unitY[i]=p.vy/s;this.unitZ[i]=p.vz/s}
   for(let e=0;e<this.edgeCount;e++){
    const i=this.edgeA[e],j=this.edgeB[e],p=b[i],q=b[j],weight=this.edgeWeight[e];
    // Pass turning momentum between neighbors while allowing local heading
@@ -169,7 +177,7 @@ class Flock{
    let alarm=0;
    if(intruder.active){
     const ox=p.x-intruder.x,oy=p.y-intruder.y,along=leadSquared>1?clamp((ox*leadX+oy*leadY)/leadSquared,0,1):0;
-    const dx=ox-leadX*along,dy=oy-leadY*along,d=Math.hypot(dx,dy);alarm=clamp(1-d/radius,0,1);
+    const dx=ox-leadX*along,dy=oy-leadY*along,d=Math.sqrt(dx*dx+dy*dy);alarm=clamp(1-d/radius,0,1);
     // Keep the stronger, velocity-anticipated intruder response.
     if(d>1e-8){const push=smooth(alarm)*(intruder.down?.29:.22);ax+=dx/d*push;ay+=dy/d*push}
    }
@@ -181,14 +189,14 @@ class Flock{
    const front=smooth(1-(p.z+p.vz*18-5)/45),back=smooth(1-(this.depth-5-p.z-p.vz*18)/45);
    az+=(front-back)*.055;
    const drive=(2.1-speed)*.035;ax+=this.unitX[i]*drive;ay+=this.unitY[i]*drive;az+=this.unitZ[i]*drive;
-   const force=Math.hypot(ax,ay,az),scale=Math.min(1,(.07+alarm*.16)/(force||1));ax*=scale;ay*=scale;az*=scale;
+   const force=Math.sqrt(ax*ax+ay*ay+az*az),scale=Math.min(1,(.07+alarm*.16)/(force||1));ax*=scale;ay*=scale;az*=scale;
    p.ax+=(ax-p.ax)*response;p.ay+=(ay-p.ay)*response;p.az+=(az-p.az)*response;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wx+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wx*.03;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wy+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wy*.03;
    p.noiseState=(Math.imul(p.noiseState,1664525)+1013904223)>>>0;p.wz+=(p.noiseState/4294967296-.5)*this.wanderStrength*2-p.wz*.03;
    // Let lingering rotation relax, opening curves without setting a route.
    p.nox=p.ox+tx[i]-p.ox*.045+p.wx;p.noy=p.oy+ty[i]-p.oy*.045+p.wy;p.noz=p.oz+tz[i]-p.oz*.045+p.wz;
-   let turn=Math.hypot(p.nox,p.noy,p.noz);if(turn>.020){const f=.020/turn;p.nox*=f;p.noy*=f;p.noz*=f;turn=.020}
+   let turn=Math.sqrt(p.nox*p.nox+p.noy*p.noy+p.noz*p.noz);if(turn>.020){const f=.020/turn;p.nox*=f;p.noy*=f;p.noz*=f;turn=.020}
    // Rodrigues rotation: a bird retains its own angular momentum in 3D.
    const kx=p.nox/(turn||1),ky=p.noy/(turn||1),kz=p.noz/(turn||1),cs=Math.cos(turn),sn=Math.sin(turn),dot=kx*p.vx+ky*p.vy+kz*p.vz;
    const vx=p.vx*cs+(ky*p.vz-kz*p.vy)*sn+kx*dot*(1-cs);
@@ -197,7 +205,7 @@ class Flock{
    p.nx=vx+p.ax;p.ny=vy+p.ay;p.nz=vz+p.az;
    // Obstacles seed a local turn which the angular neighbor links can carry.
    const spin=.025/(speed*speed||1);p.nox+=(vy*p.nz-vz*p.ny)*spin;p.noy+=(vz*p.nx-vx*p.nz)*spin;p.noz+=(vx*p.ny-vy*p.nx)*spin;
-   const speedScale=Math.min(1,2.7/(Math.hypot(p.nx,p.ny,p.nz)||1));p.nx*=speedScale;p.ny*=speedScale;p.nz*=speedScale;
+   const speedScale=Math.min(1,2.7/(Math.sqrt(p.nx*p.nx+p.ny*p.ny+p.nz*p.nz)||1));p.nx*=speedScale;p.ny*=speedScale;p.nz*=speedScale;
    p.nx=clamp(p.nx,-Math.max(0,(p.x-inset)/12),Math.max(0,(this.w-inset-p.x)/12));
    p.ny=clamp(p.ny,-Math.max(0,(p.y-inset)/12),Math.max(0,(this.h-inset-p.y)/12));
    p.nz=clamp(p.nz,-Math.max(0,(p.z-5)/12),Math.max(0,(this.depth-5-p.z)/12));
