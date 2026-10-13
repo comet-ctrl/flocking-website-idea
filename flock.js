@@ -66,12 +66,12 @@ class Flock {
    search(64);if(found<4)search(160);
    p.neighborCount=found;}
    let ax=0,ay=0,sx=0,sy=0,px=0,py=0,vx=0,vy=0;
-   for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<9){const push=(9-d)/9;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
+   for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<7.8){const push=(7.8-d)/7.8;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
    if(found){
     const flowSpeed=Math.hypot(vx,vy)||1,fx=vx/flowSpeed,fy=vy/flowSpeed,dx=px/found-p.x,dy=py/found-p.y,along=dx*fx+dy*fy;
-    // Stronger shared heading; less compression along the stream's length.
-    ax+=(vx/found-p.vx)*.115+dx*.003-fx*along*.0014+sx*.095;
-    ay+=(vy/found-p.vy)*.115+dy*.003-fy*along*.0014+sy*.095;
+    // Close sideways gaps while leaving room along each stream to bank and split.
+    ax+=(vx/found-p.vx)*.115+dx*.004-fx*along*.0022+sx*.095;
+    ay+=(vy/found-p.vy)*.115+dy*.004-fy*along*.0022+sy*.095;
    }
    // Gentle group cohesion bridges a split without locking birds to a path.
    const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.35,gather=Math.min(found<3?.06:.036,centerDistance*.00013)*rejoin;
@@ -112,7 +112,8 @@ class Flock {
    let nextX=p.vx+p.ax*step,nextY=p.vy+p.ay*step;
    const heading=Math.atan2(p.vy,p.vx),desired=Math.atan2(nextY,nextX),delta=Math.atan2(Math.sin(desired-heading),Math.cos(desired-heading));
    const turnLimit=(.029+alarm*.035)*step,angle=heading+Math.max(-turnLimit,Math.min(turnLimit,delta));
-   const oldSpeed=Math.hypot(p.vx,p.vy),target=oldSpeed+((2.1+alarm*.65)-oldSpeed)*(1-Math.exp(-dt*2));
+   // A modest escape burst keeps startled birds from outrunning their stream.
+   const oldSpeed=Math.hypot(p.vx,p.vy),target=oldSpeed+((2.1+alarm*.45)-oldSpeed)*(1-Math.exp(-dt*2));
    nextX=Math.cos(angle);nextY=Math.sin(angle);const speed=1;
    p.nx=nextX/speed*target;p.ny=nextY/speed*target;
   }

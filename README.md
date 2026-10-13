@@ -66,6 +66,10 @@ Neighbor lists are refreshed every three physics steps, while steering and mouse
 
 Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
+Density comes from closer local spacing: the separation comfort distance is 7.8 pixels, with stronger cohesion across each stream and gentler compression along its length. This keeps the body fuller while leaving room for turns and splits. Alignment, banking, angular limits, and whole-flock attraction retain the natural movement settings.
+
+The extra escape-speed burst near the mouse is smaller, helping startled birds stay with their stream. Calm flight and the default 2.2× pace are unchanged. Particle count, the optimized neighbor search, and physics frequency are unchanged.
+
 After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A few natural stragglers are allowed; birds are not pulled back onto a prescribed ribbon.
 
 ## Run locally
@@ -82,7 +86,7 @@ Run the simulation regression checks with `node --test tests/flock.cjs`.
 
 The checks compare the optimized nearest-seven search with an exhaustive all-pairs search in sparse and dense flocks, including distance ties and cell boundaries. They also verify matching simulation results at 30, 60, and 120 Hz at both 1.8× and 2.2×, local mouse response, anticipation, interpolation, and stable travel and banking in wide and narrow viewports.
 
-The density criterion for the standard mouse-pass scenario is that at least 99% of birds retain three or more neighbors within 40 pixels. This checks that the main flock stays connected while allowing a few natural stragglers. These checks catch simulation regressions; visual comparison is still needed to judge whether the movement resembles the reference.
+The density criterion for the standard mouse-pass scenario at 2.2× is that at least 99% of birds retain three or more neighbors within 40 pixels. Additional seeded recovery checks require over 90% of birds to rejoin one connected group after the mouse passes. These checks allow a few natural stragglers and catch simulation regressions; visual comparison is still needed to judge whether the movement resembles the reference.
 
 ## Files
 

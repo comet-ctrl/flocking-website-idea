@@ -138,7 +138,7 @@ test('a centered mouse pass keeps at least 99% of birds connected',()=>{
  let seed=7;const n=1400,f=new Flock(1280,720,n,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
  for(let k=0;k<300;k++){
   const cx=f.birds.reduce((sum,p)=>sum+p.x,0)/n,cy=f.birds.reduce((sum,p)=>sum+p.y,0)/n,t=k/60;
-  f.advance(1/60,{active:t>2&&t<4,x:cx+(t-3)*400,y:cy,vx:400,vy:0},1.8);
+  f.advance(1/60,{active:t>2&&t<4,x:cx+(t-3)*400,y:cy,vx:400,vy:0},2.2);
  }
  let loose=0;
  for(let i=0;i<n;i++){let neighbors=0;
@@ -147,4 +147,27 @@ test('a centered mouse pass keeps at least 99% of birds connected',()=>{
  }
  // Local flocking allows a few stragglers; do not force every bird into a ribbon.
  assert.ok(loose/n<=.01,`isolated birds after pass: ${loose}/${n}`);
+});
+
+test('the flock regroups after a mouse pass instead of leaving detached schools',()=>{
+ for(const initialSeed of [7,19,37]){
+  let seed=initialSeed;const n=1400,f=new Flock(1280,720,n,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+  // Two seconds of flight, a two-second crossing, then four seconds to regroup.
+  for(let k=0;k<480;k++){
+   const cx=f.birds.reduce((sum,p)=>sum+p.x,0)/n,cy=f.birds.reduce((sum,p)=>sum+p.y,0)/n,t=k/60;
+   f.advance(1/60,{active:t>2&&t<4,x:cx+(t-3)*400,y:cy,vx:400,vy:0},2.2);
+  }
+  // Count whole connected groups: a detached school can have plenty of neighbors
+  // and would pass an isolated-bird check despite being a visible offshoot.
+  const parents=Int32Array.from({length:n},(_,i)=>i);
+  const root=i=>{while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i]}return i};
+  for(let i=0;i<n;i++)for(let j=0;j<i;j++){
+   const dx=f.birds[i].x-f.birds[j].x,dy=f.birds[i].y-f.birds[j].y;
+   if(dx*dx+dy*dy<40*40)parents[root(i)]=root(j);
+  }
+  const sizes=new Map();let largest=0;
+  for(let i=0;i<n;i++){const group=root(i),size=(sizes.get(group)||0)+1;sizes.set(group,size);largest=Math.max(largest,size)}
+  // Allow natural small strands while requiring most birds to rejoin one flock.
+  assert.ok(largest/n>.9,`seed ${initialSeed}: largest recovered group ${largest}/${n}`);
+ }
 });
