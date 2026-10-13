@@ -20,7 +20,7 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
 4. **Stay together.** Local cohesion draws birds toward their neighbors. A gentle whole-flock centering and alignment term helps disconnected pieces regroup.
-5. **Avoid the intruder.** Nearby birds receive a radial push plus a sideways push relative to the flock's average heading. Birds on opposite sides peel apart, opening a gap around the mouse. Holding the pointer increases the effect.
+5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds peel sideways relative to their neighbors' heading, with a smaller outward push. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer increases the effect. The forward extension fades as the arrow stops.
 6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. Predictive boundary steering starts a bank before the flock hits the screen edge.
 7. **Draw.** Each bird is a short silver stroke oriented along its velocity. The normal canvas cursor is hidden; a separate glowing red arrow and fading trail follow the pointer.
 
@@ -69,6 +69,8 @@ python -m http.server 8000
 ```
 
 Then visit `http://localhost:8000`.
+
+Run the simulation regression checks with `node --test tests/flock.cjs`.
 
 ## Files
 

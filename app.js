@@ -1,7 +1,7 @@
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 let w=innerWidth,h=innerHeight,dpr=1,particles=[],paused=false,demo=false,hidden=false,last=0,time=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,angle:.45,active:false,down:false};
+const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
 let tail=[];
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
 let flock,pace=1.8,background;
@@ -13,6 +13,9 @@ function draw(dt){
  ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
  if(demo&&!mouse.active&&!paused){mouse.tx=w*(.58+.24*Math.sin(time*.18));mouse.ty=h*(.51+.22*Math.sin(time*.27+.8))}
  const dx=mouse.tx-mouse.x,dy=mouse.ty-mouse.y;const blend=1-Math.pow(.00001,Math.max(dt,.016));mouse.x+=dx*blend;mouse.y+=dy*blend;
+ // Measure the visible arrow in CSS pixels per real second. Smooth and cap
+ // velocity so a sudden pointer jump cannot project danger across the screen.
+ if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
  if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
  for(const p of particles){
@@ -26,7 +29,7 @@ function draw(dt){
 function loop(now){const dt=last?Math.min((now-last)/1000,.1):.016;last=now;if(!paused&&!document.hidden)draw(dt);requestAnimationFrame(loop)}
 function pause(){paused=!paused;document.querySelector('#pause').textContent=paused?'Resume':'Pause';document.querySelector('#pause').setAttribute('aria-pressed',paused)}
 document.querySelector('#speed').onchange=e=>{pace=Number(e.target.value)};
-document.addEventListener('visibilitychange',()=>{last=0;flock.accumulator=0});
+document.addEventListener('visibilitychange',()=>{last=0;flock.accumulator=0;mouse.vx=0;mouse.vy=0});
 document.querySelector('#pause').onclick=pause;document.querySelector('#mode').onclick=e=>{demo=!demo;e.target.setAttribute('aria-pressed',demo);e.target.textContent=demo?'Demo: on':'Demo intruder'};document.querySelector('#reset').onclick=()=>{seed();draw(0)};
 document.querySelector('#full').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{document.querySelector('#full').textContent='Unavailable'}};
 document.addEventListener('fullscreenchange',()=>document.querySelector('#full').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen');

@@ -23,6 +23,11 @@ class Flock {
   const birds=this.birds,cell=64,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
   for(let i=0;i<birds.length;i++){const p=birds[i];cx+=p.x;cy+=p.y;meanVX+=p.vx;meanVY+=p.vy;if(!refreshNeighbors)continue;const key=Math.floor(p.x/cell)+','+Math.floor(p.y/cell);let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(i)}
   cx/=birds.length||1;cy/=birds.length||1;meanVX/=birds.length||1;meanVY/=birds.length||1;
+  const radius=Math.min(this.w,this.h)*.16*(intruder.down?1.3:1);
+  // A short swept corridor ahead of the arrow, shrinking when it stops.
+  let leadX=(intruder.vx||0)*.22,leadY=(intruder.vy||0)*.22;
+  const leadScale=Math.min(1,radius*.95/(Math.hypot(leadX,leadY)||1));leadX*=leadScale;leadY*=leadScale;
+  const leadSquared=leadX*leadX+leadY*leadY;
   const distances=new Float64Array(7);
   for(let i=0;i<birds.length;i++){
    const p=birds[i],gx=Math.floor(p.x/cell),gy=Math.floor(p.y/cell);const ids=p.neighbors;let found=p.neighborCount;
@@ -56,13 +61,19 @@ class Flock {
     ay=ay*(1-urgency)+Math.cos(birdAngle)*turn*urgency;
    }
    let alarm=0;
+   p.evadeTime=Math.max(0,(p.evadeTime||0)-dt);
    if(intruder.active){
-    const dx=p.x-intruder.x,dy=p.y-intruder.y,d=Math.hypot(dx,dy),radius=Math.min(this.w,this.h)*.16*(intruder.down?1.3:1);
+    const offsetX=p.x-intruder.x,offsetY=p.y-intruder.y;
+    const along=leadSquared>1?Math.max(0,Math.min(1,(offsetX*leadX+offsetY*leadY)/leadSquared)):0;
+    const dx=offsetX-leadX*along,dy=offsetY-leadY*along,d=Math.hypot(dx,dy);
     alarm=Math.max(0,1-d/radius);const ease=alarm*alarm*(3-2*alarm);
-    const groupSpeed=Math.hypot(meanVX,meanVY)||1,normalX=-meanVY/groupSpeed,normalY=meanVX/groupSpeed;
-    const side=dx*normalX+dy*normalY>=0?1:-1;
+    // Local headings keep each stream coherent even after the group splits.
+    const flowX=found?vx/found:meanVX,flowY=found?vy/found:meanVY;
+    const groupSpeed=Math.hypot(flowX,flowY)||1,normalX=-flowY/groupSpeed,normalY=flowX/groupSpeed;
+    if(alarm>.03){if(!p.evadeTime)p.evadeSide=dx*normalX+dy*normalY>=0?1:-1;p.evadeTime=.45}
+    const side=p.evadeSide||(dx*normalX+dy*normalY>=0?1:-1);
     // Birds on each side peel away tangentially, preserving forward flight.
-    const split=ease*(intruder.down?.40:.28),radial=ease*.17;
+    const split=ease*(intruder.down?.40:.28),radial=ease*.10;
     ax+=normalX*side*split+dx/Math.max(d,1)*radial;
     ay+=normalY*side*split+dy/Math.max(d,1)*radial;
    }
