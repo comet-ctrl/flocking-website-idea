@@ -2,6 +2,26 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const Flock=require('../flock.js');
 
+test('all speed settings use 60 physics updates per real second',()=>{
+ for(const pace of [1,1.5,1.8,2.2]){
+  const f=new Flock(1280,720,1,()=>.5);let updates=0;
+  const step=f.step.bind(f);f.step=(...args)=>{updates++;step(...args)};
+  for(let i=0;i<120;i++)f.advance(1/120,{active:false},pace);
+  assert.equal(updates,60);assert.ok(Math.abs(f.time-pace)<1e-9);
+ }
+});
+test('2.2x movement is not truncated to 2x',()=>{
+ const f=new Flock(1280,720,1,()=>.5),p=f.birds[0];p.vx=2.1;p.vy=0;
+ const x=p.x,y=p.y;f.advance(1/60,{active:false},2.2);
+ assert.ok(Math.abs(Math.hypot(p.x-x,p.y-y)-2.1*2.2)<1e-9);
+});
+test('stalls have bounded catch-up and leave no physics backlog',()=>{
+ const f=new Flock(1280,720,1);let updates=0;f.step=()=>updates++;
+ f.advance(2,{active:false},2.2);assert.equal(updates,4);
+ f.advance(0,{active:false},2.2);assert.equal(updates,4);
+ assert.ok(f.renderAlpha>=0&&f.renderAlpha<=1);
+});
+
 function sample(vx){
  const f=new Flock(1200,800,1,()=>.5);
  Object.assign(f.birds[0],{x:660,y:420,vx:2.1,vy:0});

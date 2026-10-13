@@ -56,7 +56,9 @@ The animation starts paused when the browser reports a reduced-motion preference
 
 The recommended default is **1.8×**: about **227 world-space pixels per second** in calm flight, compared with the old 126. Apparent screen movement also depends on the following camera. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Try 1.5× for a calmer background or 2.2× for a more energetic effect.
 
-The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
+Physics is scheduled at **60 updates per real second**, independently of speed. Each update advances simulation time by `speed / 60` seconds, so faster flight no longer multiplies the number of neighbor searches and steering calculations. The old scheduler ran 108 updates/second at 1.8× and 132 at 2.2×. Ordinary 30, 60, and 120 Hz rendering follows the same physics schedule, with interpolation between poses. Catch-up is capped at four updates per frame; excess time after a long stall is dropped to prevent a backlog.
+
+Larger simulation steps are an approximation: exact trajectories can differ from the previous version, particularly in sharp turns. The default remains 1.8×, and 2.2× is available in the speed selector. Particle count and drawing quality are unchanged. Trail history now uses real-time tick spacing, retaining its 30 ms duration at every speed.
 
 Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 

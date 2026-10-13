@@ -9,16 +9,19 @@ class Flock {
    this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,px:x,py:y,pvx:Math.cos(heading)*speed,pvy:Math.sin(heading)*speed,history:Float64Array.from({length:16},(_,j)=>j%2?y:x),stress:0,nx:0,ny:0,ax:0,ay:0,neighbors:new Int32Array(7),neighborCount:0,a:.36+random()*.5,size:.65+random()*.45});
   }
  }
- // Scale simulation time, not just velocity: preserve turning and avoidance.
- // Small fixed steps make normal 30/60/120 Hz rendering use the same physics.
+ // Schedule 60 physics updates per real second at every speed setting.
+ // Faster pace enlarges each simulation step, rather than adding more updates.
  advance(elapsed,intruder,pace=1.8){
-  this.accumulator+=Math.min(Math.max(elapsed,0),.1)*pace;
+  this.accumulator+=Math.min(Math.max(elapsed,0),.1);
   const tick=1/60;
-  while(this.accumulator+1e-10>=tick){this.step(tick,intruder);this.accumulator-=tick}
+  const simulationStep=tick*Math.max(.25,Math.min(2.2,pace));let updates=0;
+  while(this.accumulator+1e-10>=tick&&updates<4){this.step(simulationStep,intruder);this.accumulator-=tick;updates++}
+  // Drop excess catch-up after a stall; keep the fractional interpolation phase.
+  if(this.accumulator>=tick)this.accumulator%=tick;
  }
  get renderAlpha(){return Math.max(0,Math.min(1,this.accumulator*60))}
  step(dt,intruder){
-  const step=Math.min(dt*60,2);this.time+=dt;
+  const step=dt*60;this.time+=dt;
   // Reuse neighbor identities for three ticks; forces use current positions each tick.
   const refreshNeighbors=this.neighborTick++%3===0;
   const birds=this.birds,cell=64,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
