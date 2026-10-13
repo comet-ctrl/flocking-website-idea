@@ -21,21 +21,21 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
 4. **Stay together.** Local cohesion draws birds toward their neighbors. A gentle whole-flock centering and alignment term helps disconnected pieces regroup.
 5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds peel sideways relative to their neighbors' heading, with a smaller outward push. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer increases the effect. The forward extension fades as the arrow stops.
-6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. Predictive boundary steering starts a bank before the flock hits the screen edge.
+6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. A slowly varying shared bank initiates broad turns in open space.
 7. **Draw.** Each bird is a short silver stroke oriented along its velocity. The normal canvas cursor is hidden; a separate glowing red arrow and fading trail follow the pointer.
 
 Conceptually:
 
 ```text
 steering = separation + neighbor alignment + local cohesion
-         + gentle group cohesion + boundary steering + mouse avoidance
+         + gentle group cohesion + density shaping + shared banking + mouse avoidance
 
 acceleration = ease(previous acceleration, steering)
 velocity = turn gradually toward velocity + acceleration
 position = position + velocity * elapsed time
 ```
 
-This is an artistic boids-style model, not a scientifically exact starling simulation. Group-level guidance and a finite neighbor radius are deliberate choices to keep the flock together on a bounded screen. At normal settings, the prototype renders roughly 850–2,400 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
+This is an artistic boids-style model, not a scientifically exact starling simulation. A soft density envelope maintains an elongated body and gently bends it; these are explicit artistic forces layered on local flocking, not claims about the original video algorithm. Birds have no assigned tracks or positions. A following camera replaces screen walls. At normal settings, the prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
 
 ## Controls
 
@@ -54,17 +54,17 @@ The animation starts paused when the browser reports a reduced-motion preference
 
 ## Speed and performance
 
-The recommended default is **1.8×**: about **227 CSS pixels per second** in calm flight, compared with the old 126. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Try 1.5× for a calmer background or 2.2× for a more energetic effect.
+The recommended default is **1.8×**: about **227 world-space pixels per second** in calm flight, compared with the old 126. Apparent screen movement also depends on the following camera. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Try 1.5× for a calmer background or 2.2× for a more energetic effect.
 
 The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
 
 Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
-Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 45 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
+Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
-After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. Predictive edge steering begins earlier and increases smoothly as birds approach the boundary. The default pace remains 1.8×.
+After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A gently following camera keeps the group in view without wall-driven loops. The default pace remains 1.8×.
 
-Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. Boundary look-ahead scales with the viewport, and birds sharing the group heading share its bank direction rather than peeling into opposing turns.
+Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. The body starts wider, and density pressure resists collapse into a compact knot while allowing local splitting. Shorter, brighter marks and subdued trails keep individual particles readable.
 
 This tuning was visually compared before publication using a 1280×720 preview and the reference video's 640×360 source (both 16:9), including a single pointer sweep. The video was played at normal speed; the site stayed at 1.8×. It is a qualitative comparison, not a frame-by-frame reproduction.
 

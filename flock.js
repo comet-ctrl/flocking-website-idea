@@ -1,10 +1,10 @@
-/* Local separation, alignment and cohesion. No lanes or prescribed flight paths. */
+/* Local flocking plus a soft, deformable density envelope for the reference silhouette. */
 class Flock {
  constructor(width,height,count,random=Math.random){
-  this.w=width;this.h=height;this.time=0;this.accumulator=0;this.neighborTick=0;this.bank=0;this.bankSide=1;this.birds=[];
+  this.w=width;this.h=height;this.time=0;this.accumulator=0;this.neighborTick=0;this.bank=0;this.shapeAngle=-.2;this.birds=[];
   for(let i=0;i<count;i++){
    const angle=random()*Math.PI*2,r=Math.sqrt(random());
-   const x=width*(.48+Math.cos(angle)*r*.245),y=height*(.47+Math.sin(angle)*r*.125)+Math.cos(angle)*r*height*.06;
+   const x=width*(.48+Math.cos(angle)*r*.36),y=height*(.47+Math.sin(angle)*r*.10)+Math.sin(Math.cos(angle)*r*2.8)*height*.045;
    const heading=-.2+(random()-.5)*.12,speed=2.05+random()*.12;
    this.birds.push({x,y,vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,px:x,py:y,pvx:Math.cos(heading)*speed,pvy:Math.sin(heading)*speed,history:Float64Array.from({length:16},(_,j)=>j%2?y:x),stress:0,nx:0,ny:0,ax:0,ay:0,neighbors:new Int32Array(7),neighborCount:0,a:.36+random()*.5,size:.65+random()*.45});
   }
@@ -24,19 +24,25 @@ class Flock {
   const birds=this.birds,cell=64,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
   for(let i=0;i<birds.length;i++){const p=birds[i];cx+=p.x;cy+=p.y;meanVX+=p.vx;meanVY+=p.vy;if(!refreshNeighbors)continue;const key=Math.floor(p.x/cell)+','+Math.floor(p.y/cell);let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(i)}
   cx/=birds.length||1;cy/=birds.length||1;meanVX/=birds.length||1;meanVY/=birds.length||1;
+  // Preserve a broad body rather than letting center attraction collapse it.
+  // Its axis follows the actual flock; birds have no assigned path or slot.
+  const meanAngle=Math.atan2(meanVY,meanVX),shapeDelta=Math.atan2(Math.sin(meanAngle-this.shapeAngle),Math.cos(meanAngle-this.shapeAngle));
+  this.shapeAngle+=shapeDelta*(1-Math.exp(-dt*1.2));
+  const shapeX=Math.cos(this.shapeAngle),shapeY=Math.sin(this.shapeAngle);
+  let alongVariance=0,acrossVariance=0;
+  for(const p of birds){const dx=p.x-cx,dy=p.y-cy,u=dx*shapeX+dy*shapeY,v=-dx*shapeY+dy*shapeX;alongVariance+=u*u;acrossVariance+=v*v}
+  const bodyLength=Math.min(this.w*.18,this.h*.30),bodyWidth=Math.min(this.w*.035,this.h*.055);
+  const lengthPressure=Math.max(-1,Math.min(1,(bodyLength-Math.sqrt(alongVariance/(birds.length||1)))/bodyLength));
+  const widthPressure=Math.max(-1,Math.min(1,(bodyWidth-Math.sqrt(acrossVariance/(birds.length||1)))/bodyWidth));
   const radius=Math.min(this.w,this.h)*.16*(intruder.down?1.3:1);
   // A short swept corridor ahead of the arrow, shrinking when it stops.
   let leadX=(intruder.vx||0)*.22,leadY=(intruder.vy||0)*.22;
   const leadScale=Math.min(1,radius*.95/(Math.hypot(leadX,leadY)||1));leadX*=leadScale;leadY*=leadScale;
   const leadSquared=leadX*leadX+leadY*leadY;
-  // One gently changing group bank. Smaller screens use a shorter look-ahead.
-  const viewScale=Math.max(.45,Math.min(1,Math.min(this.w,this.h)/720));
-  const margin=Math.min(200,this.w*.22,this.h*.22),lookX=cx+meanVX*65*viewScale,lookY=cy+meanVY*65*viewScale;
-  const edgeRisk=Math.max(0,(margin-lookX)/margin,(lookX-(this.w-margin))/margin,(margin-lookY)/margin,(lookY-(this.h-margin))/margin);
-  const groupAngle=Math.atan2(meanVY,meanVX),inwardAngle=Math.atan2(this.h*.5-cy,this.w*.5-cx),bankDelta=Math.atan2(Math.sin(inwardAngle-groupAngle),Math.cos(inwardAngle-groupAngle));
-  if(edgeRisk<.05)this.bankSide=bankDelta>=0?1:-1;
-  const bankTarget=Math.min(1,edgeRisk*2)*.05*this.bankSide;
-  this.bank+=(bankTarget-this.bank)*(1-Math.exp(-dt*3));
+  // Free-space flight: a slow shared bank initiates turns without screen walls.
+  const groupAngle=Math.atan2(meanVY,meanVX);
+  const bankTarget=.012*Math.sin(this.time*.30)+.006*Math.sin(this.time*.57+1.2);
+  this.bank+=(bankTarget-this.bank)*(1-Math.exp(-dt*1.5));
   const distances=new Float64Array(7);
   for(let i=0;i<birds.length;i++){
    const p=birds[i],gx=Math.floor(p.x/cell),gy=Math.floor(p.y/cell);const ids=p.neighbors;let found=p.neighborCount;
@@ -67,18 +73,16 @@ class Flock {
     ay+=(vy/found-p.vy)*.115+dy*.003-fy*along*.0014+sy*.095;
    }
    // Gentle group cohesion bridges a split without locking birds to a path.
-   const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.35,gather=Math.min(found<3?.06:.036,centerDistance*.00013)*rejoin;
+   const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.35,gather=Math.min(found<3?.045:.008,centerDistance*.00006)*rejoin;
    ax+=(cx-p.x)/Math.max(centerDistance,1)*gather+(meanVX-p.vx)*.014*rejoin;
    ay+=(cy-p.y)/Math.max(centerDistance,1)*gather+(meanVY-p.vy)*.014*rejoin;
+   const offsetX=p.x-cx,offsetY=p.y-cy,u=offsetX*shapeX+offsetY*shapeY,v=-offsetX*shapeY+offsetY*shapeX;
+   const alongForce=Math.max(-.035,Math.min(.035,u*lengthPressure*.0006));
+   const bend=Math.min(this.w,this.h)*.055*Math.sin(u/(bodyLength*1.2)-this.time*.45);
+   const acrossForce=Math.max(-.035,Math.min(.035,v*widthPressure*.0007+(bend-v)*.00028));
+   ax+=(shapeX*alongForce-shapeY*acrossForce)*rejoin;
+   ay+=(shapeY*alongForce+shapeX*acrossForce)*rejoin;
    ax+=-Math.sin(groupAngle)*this.bank;ay+=Math.cos(groupAngle)*this.bank;
-   const edge=Math.min(180,this.w*.25,this.h*.25),lookAhead=28*viewScale,edgeDistance=Math.min(p.x+p.vx*lookAhead,this.w-p.x-p.vx*lookAhead,p.y+p.vy*lookAhead,this.h-p.y-p.vy*lookAhead);
-   if(edgeDistance<edge){
-    const birdAngle=Math.atan2(p.vy,p.vx),homeAngle=Math.atan2(this.h*.5-p.y,this.w*.5-p.x),difference=Math.atan2(Math.sin(homeAngle-birdAngle),Math.cos(homeAngle-birdAngle));
-    const agrees=p.vx*meanVX+p.vy*meanVY>0,turnSide=agrees?this.bankSide:(difference>=0?1:-1);
-    const proximity=Math.max(0,Math.min(1,(edge-edgeDistance)/edge)),urgency=proximity*proximity*(3-2*proximity),turn=turnSide*Math.min(1,Math.abs(difference)*2)*.095;
-    ax=ax*(1-urgency)-Math.sin(birdAngle)*turn*urgency;
-    ay=ay*(1-urgency)+Math.cos(birdAngle)*turn*urgency;
-   }
    let alarm=0;
    p.evadeTime=Math.max(0,(p.evadeTime||0)-dt);
    if(intruder.active){
@@ -109,7 +113,7 @@ class Flock {
   }
   // Commit all velocities together, so array order cannot bias neighbors.
   for(const p of birds){p.px=p.x;p.py=p.y;p.pvx=p.vx;p.pvy=p.vy;p.vx=p.nx;p.vy=p.ny;p.x+=p.vx*step;p.y+=p.vy*step;
-   if(p.x<2){p.x=2;}if(p.x>this.w-2){p.x=this.w-2;}if(p.y<2){p.y=2;}if(p.y>this.h-2){p.y=this.h-2;}
+
    p.history.copyWithin(2,0,14);p.history[0]=p.x;p.history[1]=p.y;
   }
  }

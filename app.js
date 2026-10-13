@@ -2,10 +2,10 @@ const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 let w=innerWidth,h=innerHeight,dpr=1,particles=[],paused=false,demo=false,hidden=false,last=0,time=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
-let tail=[];
+let tail=[],cameraX=0,cameraY=0;
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
 let flock,pace=1.8,background;
-function seed(){flock=new Flock(w,h,Math.min(2400,Math.max(850,Math.floor(w*h/450))));particles=flock.birds;tail=[]}
+function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[];cameraX=0;cameraY=0}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
 function draw(dt){
@@ -17,29 +17,36 @@ function draw(dt){
  // velocity so a sudden pointer jump cannot project danger across the screen.
  if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
- if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
+ if(dt)flock.advance(dt,{...mouse,x:mouse.x+cameraX,y:mouse.y+cameraY,active:mouse.active||demo},pace);
+ // Follow free flight gently; mouse interaction remains anchored to screen space.
+ let centerX=0,centerY=0;for(const p of particles){centerX+=p.x;centerY+=p.y}
+ centerX/=particles.length;centerY/=particles.length;
+ const cameraBlend=1-Math.exp(-dt*1.8);
+ cameraX+=(centerX-w*.5-cameraX)*cameraBlend;cameraY+=(centerY-h*.48-cameraY)*cameraBlend;
+ ctx.save();ctx.translate(-cameraX,-cameraY);
  // Blend physics poses and batch similar silver strokes into four draw calls.
  const alpha=flock.renderAlpha;
  for(let band=0;band<4;band++){
-  ctx.strokeStyle=`rgba(218,233,246,${.38+band*.14})`;ctx.lineWidth=.68+band*.12;ctx.beginPath();
+  ctx.strokeStyle=`rgba(232,238,245,${.43+band*.14})`;ctx.lineWidth=.72+band*.13;ctx.beginPath();
   for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
    const x=p.px+(p.x-p.px)*alpha,y=p.py+(p.y-p.py)*alpha;
-   const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=2.8+speed*2.2;
+   const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=1.6+speed*1.45;
    ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
   }ctx.stroke();
  }
- // Faint 45 ms paths from actual past positions, not accumulated canvas blur.
+ // Faint 30 ms paths from actual past positions, not accumulated canvas blur.
  // Real-time duration keeps trail lengths consistent across refresh rates.
  for(let segment=0;segment<3;segment++){
-  ctx.strokeStyle=`rgba(190,214,239,${.10-segment*.03})`;ctx.lineWidth=.65;ctx.beginPath();
+  ctx.strokeStyle=`rgba(205,222,240,${.08-segment*.025})`;ctx.lineWidth=.65;ctx.beginPath();
   for(const p of particles){
    for(let end=0;end<2;end++){
-    const age=Math.min(7,1-alpha+(segment+end)*.015*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
+    const age=Math.min(7,1-alpha+(segment+end)*.01*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
     const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
     if(end)ctx.lineTo(x,y);else ctx.moveTo(x,y);
    }
   }ctx.stroke();
  }
+ ctx.restore();
  if(dt||!tail.length){tail.unshift({x:mouse.x,y:mouse.y});if(tail.length>48)tail.pop()}
  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#ff4169';ctx.shadowBlur=12;
  for(let i=tail.length-1;i>0;i--){ctx.strokeStyle=`rgba(255,78,114,${(1-i/tail.length)*.52})`;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(tail[i].x,tail[i].y);ctx.lineTo(tail[i-1].x,tail[i-1].y);ctx.stroke()}
