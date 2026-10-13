@@ -19,15 +19,15 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 1. **Find neighbors.** A spatial grid finds each bird's seven closest neighbors within 64 pixels. Distances continue across opposite screen edges.
 2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
-4. **Stay together locally.** Cohesion considers birds within 300 pixels, a wider neighborhood than the seven closest birds. This keeps contact across the flock instead of letting each small clump behave independently. Gentle attraction fades smoothly with distance and uses the same rule in every direction.
+4. **Turn toward nearby birds.** Cohesion considers birds within 300 pixels, a wider neighborhood than the seven closest birds. Attraction fades smoothly with distance. Most of its effect turns a bird toward its neighbors; only a small portion changes forward speed. This avoids strongly braking the front and accelerating the back until a long flock compresses into a ball. Some speed response remains so separated birds can catch up. The steering follows each bird's own heading, with no assigned world direction or flight path.
 5. **Avoid the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds are repelled from the nearest point on this predicted path. No left or right side is assigned. Holding the pointer makes the danger zone larger and repulsion stronger.
 6. **Move with inertia.** Acceleration changes gradually and has a limit. Self-propulsion nudges birds toward a cruising speed, while avoidance can slow a bird facing the intruder head-on. A maximum speed prevents runaway acceleration.
-7. **Keep the flock in view.** Each bird is a short silver stroke oriented along its velocity. The view gently follows the flock, displaying birds continuously across the repeating world's seams. This camera movement does not affect flight or steering. Pointer coordinates are translated into the same world so the red arrow still interacts with the birds beneath it.
+7. **Keep the flock in view.** Each bird is a short silver stroke oriented along its velocity. The view stays still while the flock has room to travel, then gently pans when it approaches an edge. It does not constantly recenter the flock or zoom. This camera movement does not affect flight or steering. Pointer coordinates are translated into the same world so the red arrow still interacts with the birds beneath it.
 
 Conceptually:
 
 ```text
-steering = separation + neighbor alignment + local cohesion
+steering = separation + neighbor alignment + cohesion as turning and gentle catch-up
          + intruder repulsion + self-propulsion
 
 acceleration = ease(previous acceleration, steering)
@@ -36,7 +36,7 @@ position = position + velocity * elapsed time
 position = wrap across opposite edges
 ```
 
-Flock shapes and openings around the mouse come from the local rules, without a target formation, shared bank, assigned bypass curve, or whole-flock centering force. Wider social contact supports one flock, while the following view prevents a screen edge from displaying it as two distant groups. The repeating world removes the need for boundary steering. Strong sustained disturbance can still separate birds beyond their finite perception range; they are never teleported back or assigned a regrouping path.
+Flock shapes and openings around the mouse come from the local rules, without a target formation, shared bank, assigned bypass curve, or whole-flock centering force. Wider social contact supports one flock; gentle edge tracking reduces visual splitting at screen boundaries. The repeating world removes the need for boundary steering. Strong sustained disturbance can still stretch the flock beyond the viewport or separate birds beyond their finite perception range; they are never teleported back or assigned a regrouping path.
 
 This is an artistic boids-style model, not a scientifically exact starling simulation or a claim about the reference video's algorithm. Birds have no assigned tracks or positions. The prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
 
@@ -67,7 +67,7 @@ The closest-neighbor lists refresh every three physics steps; the broader cohesi
 
 Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
-Density develops from local separation and cohesion. There is no minimum connected percentage, recovery quota, directional compression, or forced two-stream split.
+Density develops from local separation and cohesion. There is no minimum connected percentage, recovery quota, target silhouette, or forced two-stream split.
 
 ## Run locally
 
@@ -93,7 +93,7 @@ The checks cover exact neighbor selection and cohesion, wrapped distances, fixed
 - `app.js`: animation loop, drawing, cursor trail, pointer input, and UI.
 - `flock.js`: local flocking, intruder repulsion, flight inertia, and edge wrapping.
 - `neighbors.js`: optimized nearest-neighbor search in the repeating viewport.
-- `view.js`: camera following and screen/world coordinate conversion; no bird steering.
+- `view.js`: gentle camera movement near edges and screen/world coordinate conversion; no bird steering.
 - `.nojekyll`: serves the repository as plain static files on GitHub Pages.
 
 ## Portfolio integration

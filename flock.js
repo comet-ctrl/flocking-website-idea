@@ -54,9 +54,16 @@ class Flock {
     ax=(velocityX/found-p.vx)*.115+separateX*.095;
     ay=(velocityY/found-p.vy)*.115+separateY*.095;
    }
-   // See beyond the closest few birds for cohesion, preserving social contact
-   // across the flock without a global center or a prescribed formation.
-   ax+=(p.cohesionX||0)*.0003;ay+=(p.cohesionY||0)*.0003;
+   // Cohesion primarily banks a bird toward its neighbors. Strong braking at
+   // the front and acceleration at the back would squeeze a long flock into
+   // a ball. Keep a little speed response so separated birds can catch up.
+   let cohesionX=(p.cohesionX||0)*.00008,cohesionY=(p.cohesionY||0)*.00008;
+   const speedSquared=p.vx*p.vx+p.vy*p.vy;
+   if(speedSquared>1e-9){
+    const along=(cohesionX*p.vx+cohesionY*p.vy)/speedSquared*.75;
+    cohesionX-=p.vx*along;cohesionY-=p.vy*along;
+   }
+   ax+=cohesionX;ay+=cohesionY;
 
    let alarm=0;
    if(intruder.active){

@@ -29,6 +29,27 @@ test('fixed physics steps agree at 30, 60 and 120 Hz, including 2.2× pace',()=>
  }
 });
 
+test('a broad flock does not rapidly compress into a compact ball during quiet flight',()=>{
+ let seed=9;const f=new Flock(1280,720,1400,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+ function extent(){
+  // Find the center on the repeating world before measuring covariance.
+  // The largest principal extent is independent of flight direction or seams.
+  let cosX=0,sinX=0,cosY=0,sinY=0;
+  for(const p of f.birds){const x=p.x/f.w*Math.PI*2,y=p.y/f.h*Math.PI*2;cosX+=Math.cos(x);sinX+=Math.sin(x);cosY+=Math.cos(y);sinY+=Math.sin(y)}
+  const cx=Math.atan2(sinX,cosX)/(Math.PI*2)*f.w,cy=Math.atan2(sinY,cosY)/(Math.PI*2)*f.h;
+  const delta=(value,size)=>wrap(value+size/2,size)-size/2;
+  let mx=0,my=0,xx=0,xy=0,yy=0;
+  for(const p of f.birds){const x=delta(p.x-cx,f.w),y=delta(p.y-cy,f.h);mx+=x;my+=y;xx+=x*x;xy+=x*y;yy+=y*y}
+  const count=f.birds.length;mx/=count;my/=count;xx=xx/count-mx*mx;yy=yy/count-my*my;xy=xy/count-mx*my;
+  return Math.sqrt((xx+yy+Math.hypot(xx-yy,2*xy))/2);
+ }
+ const initial=extent();
+ for(let frame=0;frame<240;frame++)f.advance(1/60,quiet,2.2);
+ const final=extent();
+ // Allow substantial natural deformation; reject the old >70% width collapse.
+ assert.ok(final>initial*.6,`principal extent collapsed from ${initial} to ${final}`);
+});
+
 test('render interpolation lies between poses without advancing the simulation',()=>{
  const f=setup([{x:600,y:400}]),p=f.birds[0];
  f.advance(1/60,quiet,1);

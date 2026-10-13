@@ -26,7 +26,7 @@ function draw(dt){
  // velocity so a sudden pointer jump cannot project danger across the screen.
  if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
- // Only the view follows the flock; it never changes a bird's steering.
+ // The view stays still until the flock nears an edge; it never steers birds.
  if(dt){
   view.follow(particles,dt);
   flock.advance(dt,{...mouse,x:view.worldX(mouse.x),y:view.worldY(mouse.y),vx:mouse.vx+view.vx,vy:mouse.vy+view.vy,active:mouse.active||demo},pace);
