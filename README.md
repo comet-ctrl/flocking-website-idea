@@ -43,7 +43,7 @@ This is an artistic boids-style model, not a scientifically exact starling simul
 | --- | --- |
 | Move mouse / drag a finger | Act as the red intruder |
 | Hold mouse button / touch | Stronger avoidance |
-| Speed | Choose 1×, 1.5×, 1.8× (default), or 2.2× |
+| Speed | Choose 1×, 1.5×, 1.8×, or 2.2× (default) |
 | Demo intruder | Let the arrow move automatically when the pointer is outside the canvas |
 | Space or Pause | Pause/resume the simulation |
 | H | Hide/show the interface |
@@ -54,15 +54,17 @@ The animation starts paused when the browser reports a reduced-motion preference
 
 ## Speed and performance
 
-The recommended default is **1.8×**: about **227 world-space pixels per second** in calm flight, compared with the old 126. Apparent screen movement also depends on the following camera. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Try 1.5× for a calmer background or 2.2× for a more energetic effect.
+The default is **2.2×**: about **277 world-space pixels per second** in calm flight, compared with the old 126. Apparent screen movement also depends on the following camera. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Use 1.8× to return to the previous pace, or 1.5× for a calmer background.
 
 The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
+
+Neighbor search uses smaller 16-pixel cells, searches nearby cells first, and skips cells that cannot contain a closer candidate. The original 64/160-pixel search radii, nearest-seven results, tie ordering, forces, and 1/60-second physics steps are preserved. Regression fixtures from commit `76782d7` check the resulting trajectories for sparse and dense flocks.
 
 Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
 Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
-After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A gently following camera keeps the group in view without wall-driven loops. The default pace remains 1.8×.
+After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A gently following camera keeps the group in view without wall-driven loops. The default pace is now 2.2×.
 
 Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. The body starts wider, and density pressure resists collapse into a compact knot while allowing local splitting. Shorter, brighter marks and subdued trails keep individual particles readable.
 
@@ -109,3 +111,5 @@ Possible next steps:
 - [Steve's Site: interactive murmuration](https://stevessite.com/murmuration.html).
 
 External examples are references only. Their code, video footage, screenshots, and other assets are not included in this repository.
+
+Performance check: a local Node benchmark with 2,800 birds measured about 20.5 ms/frame for the old search at 1.8× versus 7.6 ms/frame for the optimized search at 2.2×. These timings cover simulation only, not browser rendering, and vary by device and flock shape. Particle count and rendering quality are unchanged.

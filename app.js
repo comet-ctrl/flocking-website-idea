@@ -4,7 +4,7 @@ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
 let tail=[],cameraX=0,cameraY=0;
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
-let flock,pace=1.8,background;
+let flock,pace=2.2,background;
 function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[];cameraX=0;cameraY=0}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});

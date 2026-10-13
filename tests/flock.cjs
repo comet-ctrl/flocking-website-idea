@@ -1,6 +1,15 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const Flock=require('../flock.js');
+test('optimized search preserves the chosen version in sparse and dense flocks',()=>{
+ const fixture=require('./behavior-76782d7.json'),crypto=require('node:crypto');
+ for(const {count,sha256} of fixture.cases){let seed=fixture.seed;
+  const f=new Flock(1280,720,count,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+  for(let i=0;i<fixture.ticks;i++)f.step(1/60,{active:i<60,x:620+i,y:330,vx:300,vy:0});
+  const data=f.birds.map(p=>[p.x,p.y,p.vx,p.vy].map(v=>Math.round(v*1e8)));
+  assert.equal(crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex'),sha256);
+ }
+});
 
 function sample(vx){
  const f=new Flock(1200,800,1,()=>.5);

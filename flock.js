@@ -1,4 +1,8 @@
 /* Local flocking plus a soft, deformable density envelope for the reference silhouette. */
+// Near cells first: a tight seventh-neighbor distance prunes the remaining cells.
+const SEARCH_OFFSETS=[];
+for(let y=-10;y<=10;y++)for(let x=-10;x<=10;x++)SEARCH_OFFSETS.push([x,y,x*x+y*y]);
+SEARCH_OFFSETS.sort((a,b)=>a[0]*a[0]+a[1]*a[1]-b[0]*b[0]-b[1]*b[1]);
 class Flock {
  constructor(width,height,count,random=Math.random){
   this.w=width;this.h=height;this.time=0;this.accumulator=0;this.neighborTick=0;this.bank=0;this.shapeAngle=-.2;this.birds=[];
@@ -11,7 +15,7 @@ class Flock {
  }
  // Scale simulation time, not just velocity: preserve turning and avoidance.
  // Small fixed steps make normal 30/60/120 Hz rendering use the same physics.
- advance(elapsed,intruder,pace=1.8){
+ advance(elapsed,intruder,pace=2.2){
   this.accumulator+=Math.min(Math.max(elapsed,0),.1)*pace;
   const tick=1/60;
   while(this.accumulator+1e-10>=tick){this.step(tick,intruder);this.accumulator-=tick}
@@ -21,7 +25,7 @@ class Flock {
   const step=Math.min(dt*60,2);this.time+=dt;
   // Reuse neighbor identities for three ticks; forces use current positions each tick.
   const refreshNeighbors=this.neighborTick++%3===0;
-  const birds=this.birds,cell=64,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
+  const birds=this.birds,cell=16,grid=new Map();let cx=0,cy=0,meanVX=0,meanVY=0;
   for(let i=0;i<birds.length;i++){const p=birds[i];cx+=p.x;cy+=p.y;meanVX+=p.vx;meanVY+=p.vy;if(!refreshNeighbors)continue;const key=Math.floor(p.x/cell)+','+Math.floor(p.y/cell);let bucket=grid.get(key);if(!bucket)grid.set(key,bucket=[]);bucket.push(i)}
   cx/=birds.length||1;cy/=birds.length||1;meanVX/=birds.length||1;meanVY/=birds.length||1;
   // Preserve a broad body rather than letting center attraction collapse it.
@@ -47,22 +51,25 @@ class Flock {
   for(let i=0;i<birds.length;i++){
    const p=birds[i],gx=Math.floor(p.x/cell),gy=Math.floor(p.y/cell);const ids=p.neighbors;let found=p.neighborCount;
    if(refreshNeighbors){found=0;
-   distances.fill(Infinity);
-   for(let yy=-1;yy<=1;yy++)for(let xx=-1;xx<=1;xx++){
-    const bucket=grid.get((gx+xx)+','+(gy+yy));if(!bucket)continue;
-    for(const j of bucket){if(i===j)continue;const q=birds[j],dx=q.x-p.x,dy=q.y-p.y,d2=dx*dx+dy*dy;if(d2>cell*cell||d2>=distances[6])continue;
-     let k=Math.min(found,6);while(k>0&&d2<distances[k-1]){if(k<7){distances[k]=distances[k-1];ids[k]=ids[k-1]}k--}distances[k]=d2;ids[k]=j;found=Math.min(7,found+1);
-    }
-   }
-   // Sparse birds can reconnect to a nearby stream instead of losing all neighbors.
-   if(found<4){found=0;distances.fill(Infinity);
-    for(let yy=-3;yy<=3;yy++)for(let xx=-3;xx<=3;xx++){
+   const search=(radius)=>{
+    found=0;distances.fill(Infinity);let cutoff=(radius/cell+Math.SQRT2)**2;
+    for(const [xx,yy,r2] of SEARCH_OFFSETS){
+     // sqrt(2) cells bounds the position uncertainty inside the two cells.
+     if(r2>cutoff)break;
+     const bx=(gx+xx)*cell,by=(gy+yy)*cell;
+     const minX=Math.max(bx-p.x,0,p.x-bx-cell),minY=Math.max(by-p.y,0,p.y-by-cell);
+     if(minX*minX+minY*minY>Math.min(radius*radius,distances[6]))continue;
      const bucket=grid.get((gx+xx)+','+(gy+yy));if(!bucket)continue;
-     for(const j of bucket){if(i===j)continue;const q=birds[j],dx=q.x-p.x,dy=q.y-p.y,d2=dx*dx+dy*dy;if(d2>160*160||d2>=distances[6])continue;
-      let k=Math.min(found,6);while(k>0&&d2<distances[k-1]){distances[k]=distances[k-1];ids[k]=ids[k-1];k--}distances[k]=d2;ids[k]=j;found=Math.min(7,found+1);
+     for(const j of bucket){if(i===j)continue;const q=birds[j],dx=q.x-p.x,dy=q.y-p.y,d2=dx*dx+dy*dy;if(d2>radius*radius||d2>distances[6])continue;
+      // Match the original 64 px grid's tie order as well as its nearest seven.
+      const before=(other)=>{const r=birds[other];return Math.floor(q.y/64)-Math.floor(r.y/64)||Math.floor(q.x/64)-Math.floor(r.x/64)||j-other};
+      if(found===7&&d2===distances[6]&&before(ids[6])>=0)continue;
+      let k=Math.min(found,6);while(k>0&&(d2<distances[k-1]||(d2===distances[k-1]&&before(ids[k-1])<0))){distances[k]=distances[k-1];ids[k]=ids[k-1];k--}distances[k]=d2;ids[k]=j;found=Math.min(7,found+1);
      }
+     cutoff=(Math.sqrt(Math.min(radius*radius,distances[6]))/cell+Math.SQRT2)**2;
     }
-   }
+   };
+   search(64);if(found<4)search(160);
    p.neighborCount=found;}
    let ax=0,ay=0,sx=0,sy=0,px=0,py=0,vx=0,vy=0;
    for(let k=0;k<found;k++){const q=birds[ids[k]];px+=q.x;py+=q.y;vx+=q.vx;vy+=q.vy;const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<9){const push=(9-d)/9;sx+=(p.x-q.x)/Math.max(d,1)*push;sy+=(p.y-q.y)/Math.max(d,1)*push}}
