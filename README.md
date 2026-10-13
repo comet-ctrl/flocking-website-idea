@@ -29,7 +29,7 @@ The population is capped at 1,100–2,200 birds according to viewport area. Neig
 
 On a served website, a Web Worker runs the physics separately from mouse handling and drawing. It transfers compact position snapshots instead of copying every simulation object. Drawing samples actual position history with a ten-tick buffer (about 76 milliseconds at 2.2×), smoothing the gaps between updates without inventing future turns. The arrow itself responds immediately. Browsers without worker support, and files opened directly, use the same physics on the main thread.
 
-Each bird is a silver stroke with stable brightness variation and a depth-dependent length. Four batches draw the bright marks; no per-bird shadow blur is needed. Three faint trail batches show about 30 milliseconds of actual position history. The background gradient is cached, and hidden tabs stop requesting simulation time.
+Each bird is a tapered silver stroke with a fine white tip, stable brightness variation, and a depth-dependent length. Poses are calculated once and reused for batched drawing. A quarter-resolution light layer adds a soft halo without per-bird shadow blur, and a faint wake follows actual position history. The arrow has a thin fading shaft and a short trail whose lifetime is measured in seconds. The background gradient is cached, and hidden tabs stop requesting simulation time.
 
 Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS. A lower speed setting remains available for less powerful devices.
 
@@ -42,11 +42,11 @@ Performance depends on device, density, and viewport size; this is not a guarant
 | Speed | 1×, 1.5×, 1.8×, or 2.2× (default) |
 | Demo intruder | Automatic arrow motion while the pointer is outside the canvas |
 | Space or Pause | Pause/resume |
-| H | Hide/show the interface |
+| H | Reveal the quiet interface or toggle manual hiding |
 | Reset | Recreate the flock |
 | Fullscreen | Fill the display where supported |
 
-The animation starts paused if the browser reports a reduced-motion preference.
+The interface fades after three seconds, leaving the flock unobstructed. Move near the bottom edge, press H or Tab, or touch the canvas to reveal it. Focused or hovered controls stay visible. The animation starts paused and the interface remains visible if the browser reports a reduced-motion preference.
 
 ## The website idea
 

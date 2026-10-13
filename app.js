@@ -1,66 +1,120 @@
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const bloom=document.createElement('canvas'),bloomCtx=bloom.getContext('2d');
 let w=innerWidth,h=innerHeight,dpr=1,particles=[],paused=false,demo=false,hidden=false,last=0,time=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
-let tail=[];
-function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
-let flock,pace=2.2,background;
-function seed(){flock?.destroy();flock=new FlockRunner(w,h,Math.min(2200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
+let flock,pace=2.2,background,poses,tones,tail=[];
+const controls=document.querySelector('.controls'),buttons=document.querySelector('.buttons');
+let quietTimer;
+function showControls(){
+ clearTimeout(quietTimer);document.body.classList.remove('ui-quiet');
+ if(!reduced&&!paused)quietTimer=setTimeout(()=>{if(!controls.matches(':focus-within')&&!buttons.matches(':hover'))document.body.classList.add('ui-quiet')},3000);
+}
+function resize(){
+ w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);
+ canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
+ background=ctx.createRadialGradient(w*.48,h*.47,0,w*.48,h*.47,Math.max(w,h)*.67);
+ background.addColorStop(0,'#10151d');background.addColorStop(.55,'#0b1016');background.addColorStop(1,'#05080b');
+ // A quarter-resolution light layer gives a soft halo without per-bird blur.
+ bloom.width=Math.ceil(w/4);bloom.height=Math.ceil(h/4);bloomCtx.setTransform(bloom.width/w,0,0,bloom.height/h,0,0);
+ mouse.x=Math.max(0,Math.min(w,mouse.x));mouse.y=Math.max(0,Math.min(h,mouse.y));mouse.tx=Math.max(0,Math.min(w,mouse.tx));mouse.ty=Math.max(0,Math.min(h,mouse.ty));
+ seed();
+}
+function seed(){
+ flock?.destroy();flock=new FlockRunner(w,h,Math.min(2200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;
+ poses=new Float32Array(particles.length*6);tones=Uint8Array.from(particles,p=>Math.min(3,Math.floor((p.a-.36)*8)));tail=[];
+}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
-canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
-function draw(dt){
- time+=dt;ctx.fillStyle='#080b11';ctx.fillRect(0,0,w,h);
- ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
- if(demo&&!mouse.active&&!paused){mouse.tx=w*(.58+.24*Math.sin(time*.18));mouse.ty=h*(.51+.22*Math.sin(time*.27+.8))}
- const dx=mouse.tx-mouse.x,dy=mouse.ty-mouse.y;const blend=1-Math.pow(.00001,Math.max(dt,.016));mouse.x+=dx*blend;mouse.y+=dy*blend;
- // Measure the visible arrow in CSS pixels per real second. Smooth and cap
- // velocity so a sudden pointer jump cannot project danger across the screen.
- if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
- if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
- // Screen pixels are world coordinates. There is no camera or offscreen world.
- if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
- // Draw a short distance behind the worker's simulation clock. Actual pose
- // history gives smooth motion between snapshots, without predicting turns.
+canvas.addEventListener('pointermove',move);
+canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId);if(e.pointerType==='touch')showControls()});
+window.addEventListener('pointerup',()=>mouse.down=false);
+canvas.addEventListener('pointercancel',()=>mouse.down=false);
+canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});
+window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
+// Keep the flock unobstructed; the bottom edge, keyboard, and focus reveal UI.
+window.addEventListener('pointermove',e=>{if(e.clientY>h-110)showControls()},{passive:true});
+controls.addEventListener('focusin',showControls);controls.addEventListener('focusout',showControls);
+buttons.addEventListener('pointerleave',showControls);
+
+function drawBirds(){
  const age=flock.renderAgeTicks,i=Math.floor(age),j=Math.min(15,i+1),mix=age-i;
- const alpha=1-Math.min(1,age);
- ctx.lineCap='round';
+ const k=Math.min(14,i),l=Math.min(14,j),alpha=1-Math.min(1,age);
+ // Calculate each pose once, then reuse it in a few batched drawing passes.
+ for(let n=0;n<particles.length;n++){
+  const p=particles[n],a=p.history,b=n*6;
+  const x=a[i*2]+(a[j*2]-a[i*2])*mix,y=a[i*2+1]+(a[j*2+1]-a[i*2+1])*mix;
+  let vx=(a[k*2]-a[k*2+2])*(1-mix)+(a[l*2]-a[l*2+2])*mix,vy=(a[k*2+1]-a[k*2+3])*(1-mix)+(a[l*2+1]-a[l*2+3])*mix;
+  if(Math.hypot(vx,vy)<.001){vx=p.vx;vy=p.vy}
+  const speed=Math.hypot(vx,vy)||1,depth=(p.pz+(p.z-p.pz)*alpha)/flock.depth;
+  const length=(2.2+speed*2.05)*(.86+p.size*.32)*(.88+depth*.24),dx=vx/speed*length,dy=vy/speed*length;
+  poses[b]=x;poses[b+1]=y;poses[b+2]=x-dx;poses[b+3]=y-dy;poses[b+4]=x-dx*.34;poses[b+5]=y-dy*.34;
+ }
+ bloomCtx.clearRect(0,0,w,h);bloomCtx.beginPath();bloomCtx.lineCap='round';
+ for(let b=0;b<poses.length;b+=6){bloomCtx.moveTo(poses[b],poses[b+1]);bloomCtx.lineTo(poses[b+2],poses[b+3])}
+ bloomCtx.strokeStyle='rgba(197,214,232,.18)';bloomCtx.lineWidth=4.2;bloomCtx.stroke();
+ ctx.drawImage(bloom,0,0,w,h);
+ // A short, dim wake uses actual flight history and fades behind the body.
+ const tailAge=Math.min(15,age+.038*60*pace),ti=Math.floor(tailAge),tj=Math.min(15,ti+1),tm=tailAge-ti;
+ ctx.lineCap='round';ctx.beginPath();
+ for(let n=0;n<particles.length;n++){
+  const a=particles[n].history,b=n*6;
+  ctx.moveTo(poses[b+2],poses[b+3]);ctx.lineTo(a[ti*2]+(a[tj*2]-a[ti*2])*tm,a[ti*2+1]+(a[tj*2+1]-a[ti*2+1])*tm);
+ }
+ ctx.strokeStyle='rgba(189,208,228,.075)';ctx.lineWidth=.65;ctx.stroke();
+ // Fixed brightness bands avoid flicker. Fine white tips taper the silver marks.
  for(let band=0;band<4;band++){
   ctx.beginPath();
-  for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
-   const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
-   // Depth changes length continuously; brightness groups remain stable.
-   const depth=(p.pz+(p.z-p.pz)*alpha)/flock.depth;
-   const k=Math.min(14,i),l=Math.min(14,j);
-   const vx=(p.history[k*2]-p.history[k*2+2])*(1-mix)+(p.history[l*2]-p.history[l*2+2])*mix,vy=(p.history[k*2+1]-p.history[k*2+3])*(1-mix)+(p.history[l*2+1]-p.history[l*2+3])*mix;
-   const speed=Math.hypot(vx,vy)||1,len=(1.7+speed*1.65)*(.8+p.size*.45)*(.8+depth*.4);
-   ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
-  }
-  ctx.strokeStyle=`rgba(232,238,245,${.52+band*.145})`;ctx.lineWidth=.85+band*.12;ctx.stroke();
+  for(let n=0;n<particles.length;n++){if(tones[n]!==band)continue;const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+2],poses[b+3])}
+  ctx.strokeStyle=`rgba(221,232,242,${.42+band*.14})`;ctx.lineWidth=.72+band*.105;ctx.stroke();
  }
- // Faint 30 ms paths from actual past positions, not accumulated canvas blur.
- // Real-time duration keeps trail lengths consistent across refresh rates.
- for(let segment=0;segment<3;segment++){
-  ctx.strokeStyle=`rgba(205,222,240,${.08-segment*.025})`;ctx.lineWidth=.65;ctx.beginPath();
-  for(const p of particles){
-   let startX=0,startY=0;
-   for(let end=0;end<2;end++){
-    const trailAge=Math.min(15,age+(segment+end)*.01*60*pace),i=Math.floor(trailAge),j=Math.min(15,i+1),mix=trailAge-i;
-    const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
-    if(end){ctx.moveTo(startX,startY);ctx.lineTo(x,y)}else{startX=x;startY=y}
-   }
-  }ctx.stroke();
+ for(let band=0;band<2;band++){
+  ctx.beginPath();
+  for(let n=0;n<particles.length;n++){if((tones[n]>>1)!==band)continue;const b=n*6;ctx.moveTo(poses[b],poses[b+1]);ctx.lineTo(poses[b+4],poses[b+5])}
+  ctx.strokeStyle=`rgba(249,251,255,${.48+band*.24})`;ctx.lineWidth=.72+band*.12;ctx.stroke();
  }
- if(dt||!tail.length){tail.unshift({x:mouse.x,y:mouse.y});if(tail.length>48)tail.pop()}
- ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#ff4169';ctx.shadowBlur=12;
- for(let i=tail.length-1;i>0;i--){ctx.strokeStyle=`rgba(255,78,114,${(1-i/tail.length)*.52})`;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(tail[i].x,tail[i].y);ctx.lineTo(tail[i-1].x,tail[i-1].y);ctx.stroke()}
- ctx.translate(mouse.x,mouse.y);ctx.rotate(mouse.angle);const length=Math.min(180,70+Math.hypot(dx,dy)*.7);const grad=ctx.createLinearGradient(-length,0,0,0);grad.addColorStop(0,'#ff527000');grad.addColorStop(1,'#ff8298');ctx.strokeStyle=grad;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-length,0);ctx.lineTo(0,0);ctx.stroke();ctx.strokeStyle='#ff8298';ctx.beginPath();ctx.moveTo(-21,-10);ctx.lineTo(0,0);ctx.lineTo(-21,10);ctx.stroke();ctx.restore();
+}
+function drawArrow(dt){
+ // Trail lifetime is measured in seconds, independent of frame rate.
+ if(dt||!tail.length)tail.unshift({x:mouse.x,y:mouse.y,t:time});
+ while(tail.length>1&&time-tail[tail.length-1].t>.22)tail.pop();
+ if(tail.length>32)tail.length=32;
+ if(tail.length>1){
+  const end=tail[tail.length-1],fade=ctx.createLinearGradient(end.x,end.y,mouse.x,mouse.y);
+  fade.addColorStop(0,'rgba(237,80,113,0)');fade.addColorStop(1,'rgba(237,80,113,.18)');
+  ctx.strokeStyle=fade;ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(end.x,end.y);
+  for(let i=tail.length-2;i>=0;i--)ctx.lineTo(tail[i].x,tail[i].y);ctx.stroke();
+ }
+ ctx.save();ctx.translate(mouse.x,mouse.y);ctx.rotate(mouse.angle);ctx.lineJoin='round';
+ const length=Math.min(320,w*.27,100+w*.13+Math.hypot(mouse.vx,mouse.vy)*.04);
+ const fade=ctx.createLinearGradient(-length,0,0,0);
+ fade.addColorStop(0,'rgba(236,76,109,0)');fade.addColorStop(.45,'rgba(236,76,109,.2)');fade.addColorStop(1,'rgba(255,137,158,.9)');
+ ctx.shadowColor='#f04e73';ctx.shadowBlur=7;ctx.strokeStyle=fade;ctx.lineWidth=1.25;
+ ctx.beginPath();ctx.moveTo(-length,0);ctx.lineTo(0,0);ctx.stroke();
+ ctx.strokeStyle='#ff96ac';ctx.lineWidth=1.35;ctx.beginPath();ctx.moveTo(-16,-6.5);ctx.lineTo(0,0);ctx.lineTo(-16,6.5);ctx.stroke();ctx.restore();
+}
+function draw(dt){
+ time+=dt;ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
+ if(demo&&!mouse.active&&!paused){mouse.tx=w*(.58+.24*Math.sin(time*.18));mouse.ty=h*(.51+.22*Math.sin(time*.27+.8))}
+ const dx=mouse.tx-mouse.x,dy=mouse.ty-mouse.y,blend=1-Math.pow(.00001,Math.max(dt,.016));mouse.x+=dx*blend;mouse.y+=dy*blend;
+ // Arrow velocity anticipates the same local danger zone; flight rules are unchanged.
+ if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
+ if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
+ if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
+ drawBirds();drawArrow(dt);
 }
 function loop(now){const dt=last?Math.min((now-last)/1000,.1):.016;last=now;if(!paused&&!document.hidden)draw(dt);requestAnimationFrame(loop)}
-function pause(){paused=!paused;document.querySelector('#pause').textContent=paused?'Resume':'Pause';document.querySelector('#pause').setAttribute('aria-pressed',paused)}
+function pause(){paused=!paused;document.querySelector('#pause').textContent=paused?'Resume':'Pause';document.querySelector('#pause').setAttribute('aria-pressed',paused);showControls()}
 document.querySelector('#speed').onchange=e=>{pace=Number(e.target.value)};
 document.addEventListener('visibilitychange',()=>{last=0;flock.resetClock();mouse.vx=0;mouse.vy=0});
-document.querySelector('#pause').onclick=pause;document.querySelector('#mode').onclick=e=>{demo=!demo;e.target.setAttribute('aria-pressed',demo);e.target.textContent=demo?'Demo: on':'Demo intruder'};document.querySelector('#reset').onclick=()=>{seed();draw(0)};
+document.querySelector('#pause').onclick=pause;
+document.querySelector('#mode').onclick=e=>{demo=!demo;e.target.setAttribute('aria-pressed',demo);e.target.textContent=demo?'Demo: on':'Demo intruder'};
+document.querySelector('#reset').onclick=()=>{seed();draw(0);showControls()};
 document.querySelector('#full').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{document.querySelector('#full').textContent='Unavailable'}};
 document.addEventListener('fullscreenchange',()=>document.querySelector('#full').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen');
-window.addEventListener('keydown',e=>{if(e.target.matches('button,input,select'))return;if(e.code==='Space'){e.preventDefault();pause()}if(e.key.toLowerCase()==='h'){hidden=!hidden;document.querySelector('header').style.visibility=hidden?'hidden':'visible';document.querySelector('.controls').style.visibility=hidden?'hidden':'visible'}});
-window.addEventListener('resize',resize);resize();draw(.016);if(reduced)pause();requestAnimationFrame(loop);
+window.addEventListener('keydown',e=>{
+ if(e.target.matches('button,input,select')){showControls();return}
+ if(e.code==='Space'){e.preventDefault();pause()}
+ if(e.key.toLowerCase()==='h'){hidden=!hidden&&!document.body.classList.contains('ui-quiet');document.body.classList.toggle('ui-hidden',hidden)}
+ showControls();
+});
+window.addEventListener('resize',resize);resize();draw(.016);if(reduced)pause();showControls();requestAnimationFrame(loop);
