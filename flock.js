@@ -1,15 +1,10 @@
 /* Local flocking with turning momentum, cohesion, and obstacle avoidance. */
 const NeighborSearch=typeof module!=='undefined'?require('./neighbors.js'):FlockNeighbors;
-function wrappedDelta(delta,extent){
- delta%=extent;
- if(delta>extent/2)return delta-extent;
- if(delta<-extent/2)return delta+extent;
- return delta;
-}
-
+function edgeApproach(distance,zone){const t=Math.max(0,Math.min(1,1-distance/zone));return t*t*(3-2*t)}
 class Flock {
  constructor(width,height,count,random=Math.random){
   this.w=width;this.h=height;this.accumulator=0;this.neighborTick=0;this.birds=[];
+  this.edgeInset=Math.min(12,width*.08,height*.08);this.boundaryContacts=0;
   // Angular rates use radians per nominal 1/60-second physics step.
   this.wanderStrength=.000012;
   this.neighborhood=new NeighborSearch(width,height,300);
@@ -63,7 +58,7 @@ class Flock {
  }
 
  step(dt,intruder){
-  const step=Math.min(dt*60,2),birds=this.birds;
+  const step=Math.min(dt*60,2),birds=this.birds,inset=this.edgeInset,zone=Math.min(180,this.w*.26,this.h*.26);
   const neighborTick=this.neighborTick++;
   if(neighborTick%3===0){this.neighborhood.refresh(birds,neighborTick%6===0);this.refreshBankGraph()}
   this.updateBankTorques();
@@ -78,7 +73,7 @@ class Flock {
    let ax=0,ay=0,separateX=0,separateY=0;
    const found=p.neighborCount;
    for(let k=0;k<found;k++){
-    const q=birds[p.neighbors[k]],dx=wrappedDelta(q.x-p.x,this.w),dy=wrappedDelta(q.y-p.y,this.h);
+    const q=birds[p.neighbors[k]],dx=q.x-p.x,dy=q.y-p.y;
     const distanceSquared=dx*dx+dy*dy;
     if(distanceSquared<7.8*7.8){
      const distance=Math.sqrt(distanceSquared);
@@ -103,7 +98,7 @@ class Flock {
 
    let alarm=0;
    if(intruder.active){
-    const offsetX=wrappedDelta(p.x-intruder.x,this.w),offsetY=wrappedDelta(p.y-intruder.y,this.h);
+    const offsetX=p.x-intruder.x,offsetY=p.y-intruder.y;
     const along=leadSquared>1?Math.max(0,Math.min(1,(offsetX*leadX+offsetY*leadY)/leadSquared)):0;
     const dx=offsetX-leadX*along,dy=offsetY-leadY*along,distance=Math.hypot(dx,dy);
     alarm=Math.max(0,1-distance/radius);
@@ -120,6 +115,26 @@ class Flock {
    p.wander+=(p.noiseState/4294967296-.5)*this.wanderStrength-p.wander*.018;
    const bankForce=this.bankTorques[i]-p.bank*.008+p.wander;
    p.nbank=Math.max(-.045,Math.min(.045,p.bank+bankForce*step));
+   // Each bird sees the actual screen edges ahead of its own flight. The
+   // resulting turn then travels through the same local neighbor network.
+   const predictedX=p.x+p.vx*18,predictedY=p.y+p.vy*18;
+   const left=p.vx<0?edgeApproach(predictedX-inset,zone):0,right=p.vx>0?edgeApproach(this.w-inset-predictedX,zone):0;
+   const top=p.vy<0?edgeApproach(predictedY-inset,zone):0,bottom=p.vy>0?edgeApproach(this.h-inset-predictedY,zone):0;
+   const normalX=left-right,normalY=top-bottom,urgency=Math.max(left,right,top,bottom);
+   if(urgency>0&&speed>1e-9){
+    const cross=p.vx*normalY-p.vy*normalX,dot=p.vx*normalX+p.vy*normalY;
+    let angle=Math.atan2(cross,dot);
+    if(Math.abs(cross)<1e-8&&dot<0){
+     let nearbyBank=p.bank;
+     if(Math.abs(nearbyBank)<1e-6)for(let k=0;k<found;k++)nearbyBank+=birds[p.neighbors[k]].bank;
+     // Exact head-on symmetry is resolved by existing local flight state.
+     const direction=nearbyBank||p.wander||((p.noiseState&1)?1:-1);
+     angle=Math.sign(direction)*Math.PI;
+    }
+    const desiredBank=Math.max(-.045,Math.min(.045,angle*.022))*urgency;
+    const wallResponse=urgency*(.18+.82*urgency*urgency);
+    p.nbank+=(desiredBank-p.nbank)*wallResponse;
+   }
    if(speed>1e-9){const drive=(2.1-speed)*.035;ax+=p.vx/speed*drive;ay+=p.vy/speed*drive}
    const force=Math.hypot(ax,ay),limit=.065+alarm*.18;
    if(force>limit){ax*=limit/force;ay*=limit/force}
@@ -133,16 +148,25 @@ class Flock {
    p.nbank=Math.max(-.045,Math.min(.045,p.nbank+externalTurn*.015));
    const nextSpeed=Math.hypot(p.nx,p.ny),speedScale=Math.min(1,2.8/(nextSpeed||1));
    p.nx*=speedScale;p.ny*=speedScale;
+   // Close to a wall, reserve time to finish the bank by easing just the
+   // outward component. Tangential flight and inward motion remain free.
+   // Clearance shrinks gradually instead of relying on a collision bounce.
+   p.nx=Math.max(-Math.max(0,(p.x-inset)/18),Math.min(Math.max(0,(this.w-inset-p.x)/18),p.nx));
+   p.ny=Math.max(-Math.max(0,(p.y-inset)/18),Math.min(Math.max(0,(this.h-inset-p.y)/18),p.ny));
   }
 
   // Commit together so neighboring birds all observe the same previous step.
   for(const p of birds){
    p.px=p.x;p.py=p.y;p.pvx=p.vx;p.pvy=p.vy;
    p.bank=p.nbank;p.vx=p.nx;p.vy=p.ny;p.x+=p.vx*step;p.y+=p.vy*step;
-   // A repeating world has no walls, global steering, or center attraction.
-   const shiftX=Math.floor(p.x/this.w)*this.w,shiftY=Math.floor(p.y/this.h)*this.h;
-   p.x-=shiftX;p.y-=shiftY;p.px-=shiftX;p.py-=shiftY;
-   if(shiftX||shiftY)for(let k=0;k<p.history.length;k+=2){p.history[k]-=shiftX;p.history[k+1]-=shiftY}
+   // A final guard handles extreme pointer pushes and very small screens.
+   // No bird is transported to another edge and no camera can extend the world.
+   const maxX=this.w-inset,maxY=this.h-inset,contactsBefore=this.boundaryContacts;
+   if(p.x<inset){p.x=inset;p.vx=Math.max(.2,Math.abs(p.vx)*.2);p.ax=Math.max(0,p.ax);this.boundaryContacts++}
+   else if(p.x>maxX){p.x=maxX;p.vx=-Math.max(.2,Math.abs(p.vx)*.2);p.ax=Math.min(0,p.ax);this.boundaryContacts++}
+   if(p.y<inset){p.y=inset;p.vy=Math.max(.2,Math.abs(p.vy)*.2);p.ay=Math.max(0,p.ay);this.boundaryContacts++}
+   else if(p.y>maxY){p.y=maxY;p.vy=-Math.max(.2,Math.abs(p.vy)*.2);p.ay=Math.min(0,p.ay);this.boundaryContacts++}
+   if(this.boundaryContacts!==contactsBefore){const speed=Math.hypot(p.vx,p.vy);if(speed>2.8){p.vx*=2.8/speed;p.vy*=2.8/speed}}
    p.history.copyWithin(2,0,14);p.history[0]=p.x;p.history[1]=p.y;
   }
  }

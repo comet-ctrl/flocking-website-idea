@@ -4,19 +4,10 @@ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
 let tail=[];
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
-let flock,view,pace=2.2,background;
-function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));view=new FlockView(w,h);particles=flock.birds;tail=[]}
+let flock,pace=2.2,background;
+function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
-// Draw the visible parts of a short segment on both sides of a wrapping edge.
-function wrappedLine(x1,y1,x2,y2){
- ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
- const shiftX=Math.min(x1,x2)<0?w:Math.max(x1,x2)>w?-w:0;
- const shiftY=Math.min(y1,y2)<0?h:Math.max(y1,y2)>h?-h:0;
- if(shiftX){ctx.moveTo(x1+shiftX,y1);ctx.lineTo(x2+shiftX,y2)}
- if(shiftY){ctx.moveTo(x1,y1+shiftY);ctx.lineTo(x2,y2+shiftY)}
- if(shiftX&&shiftY){ctx.moveTo(x1+shiftX,y1+shiftY);ctx.lineTo(x2+shiftX,y2+shiftY)}
-}
 function draw(dt){
  time+=dt;ctx.fillStyle='#080b11';ctx.fillRect(0,0,w,h);
  ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
@@ -26,19 +17,16 @@ function draw(dt){
  // velocity so a sudden pointer jump cannot project danger across the screen.
  if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
- // The view stays still until the flock nears an edge; it never steers birds.
- if(dt){
-  view.follow(particles,dt);
-  flock.advance(dt,{...mouse,x:view.worldX(mouse.x),y:view.worldY(mouse.y),vx:mouse.vx+view.vx,vy:mouse.vy+view.vy,active:mouse.active||demo},pace);
- }
+ // Screen pixels are world coordinates. There is no camera or offscreen world.
+ if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
  // Blend physics poses and batch similar silver strokes into four draw calls.
  const alpha=flock.renderAlpha;
  for(let band=0;band<4;band++){
   ctx.strokeStyle=`rgba(232,238,245,${.43+band*.14})`;ctx.lineWidth=.72+band*.13;ctx.beginPath();
   for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
-   const x=view.screenX(p.px+(p.x-p.px)*alpha),y=view.screenY(p.py+(p.y-p.py)*alpha);
+   const x=p.px+(p.x-p.px)*alpha,y=p.py+(p.y-p.py)*alpha;
    const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=1.6+speed*1.45;
-   wrappedLine(x,y,x-vx/speed*len,y-vy/speed*len);
+   ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
   }ctx.stroke();
  }
  // Faint 30 ms paths from actual past positions, not accumulated canvas blur.
@@ -46,12 +34,11 @@ function draw(dt){
  for(let segment=0;segment<3;segment++){
   ctx.strokeStyle=`rgba(205,222,240,${.08-segment*.025})`;ctx.lineWidth=.65;ctx.beginPath();
   for(const p of particles){
-   const shiftX=view.screenX(p.x)-p.x,shiftY=view.screenY(p.y)-p.y;
    let startX=0,startY=0;
    for(let end=0;end<2;end++){
     const age=Math.min(7,1-alpha+(segment+end)*.01*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
-    const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix+shiftX,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix+shiftY;
-    if(end)wrappedLine(startX,startY,x,y);else{startX=x;startY=y}
+    const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
+    if(end){ctx.moveTo(startX,startY);ctx.lineTo(x,y)}else{startX=x;startY=y}
    }
   }ctx.stroke();
  }
