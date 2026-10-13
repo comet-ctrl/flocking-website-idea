@@ -73,23 +73,15 @@ class Flock {
     ay+=(vy/found-p.vy)*.115+dy*.003-fy*along*.0014+sy*.095;
    }
    // Gentle group cohesion bridges a split without locking birds to a path.
-   const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.35,gather=Math.min(found<3?.065:.025,centerDistance*.00012)*rejoin;
-   ax+=(cx-p.x)/Math.max(centerDistance,1)*gather+(meanVX-p.vx)*.035*rejoin;
-   ay+=(cy-p.y)/Math.max(centerDistance,1)*gather+(meanVY-p.vy)*.035*rejoin;
+   const centerDistance=Math.hypot(cx-p.x,cy-p.y),rejoin=1-p.stress*.35,gather=Math.min(found<3?.045:.008,centerDistance*.00006)*rejoin;
+   ax+=(cx-p.x)/Math.max(centerDistance,1)*gather+(meanVX-p.vx)*.014*rejoin;
+   ay+=(cy-p.y)/Math.max(centerDistance,1)*gather+(meanVY-p.vy)*.014*rejoin;
    const offsetX=p.x-cx,offsetY=p.y-cy,u=offsetX*shapeX+offsetY*shapeY,v=-offsetX*shapeY+offsetY*shapeX;
-   // Do not expand detached or recently frightened birds farther from the body.
-   const expansion=lengthPressure>0?(found>=4?1-p.stress:0):1;
-   const alongForce=Math.max(-.035,Math.min(.035,u*lengthPressure*.0006))*expansion;
+   const alongForce=Math.max(-.035,Math.min(.035,u*lengthPressure*.0006));
    const bend=Math.min(this.w,this.h)*.055*Math.sin(u/(bodyLength*1.2)-this.time*.45);
    const acrossForce=Math.max(-.035,Math.min(.035,v*widthPressure*.0007+(bend-v)*.00028));
    ax+=(shapeX*alongForce-shapeY*acrossForce)*rejoin;
    ay+=(shapeY*alongForce+shapeX*acrossForce)*rejoin;
-   const outside=Math.max(0,Math.abs(u)-bodyLength*1.9),acrossOutside=Math.max(0,Math.abs(v-bend)-bodyWidth*2.4);
-   const recovery=Math.min(1,outside/80+acrossOutside/60);
-   // Recover loose tips smoothly, without teleporting them or squeezing the core.
-   const homeAlong=-Math.sign(u)*Math.min(.075,outside*.0012),homeAcross=-Math.sign(v-bend)*Math.min(.085,acrossOutside*.0018);
-   ax+=shapeX*homeAlong-shapeY*homeAcross+(meanVX-p.vx)*.12*recovery;
-   ay+=shapeY*homeAlong+shapeX*homeAcross+(meanVY-p.vy)*.12*recovery;
    ax+=-Math.sin(groupAngle)*this.bank;ay+=Math.cos(groupAngle)*this.bank;
    let alarm=0;
    p.evadeTime=Math.max(0,(p.evadeTime||0)-dt);
@@ -98,19 +90,15 @@ class Flock {
     const along=leadSquared>1?Math.max(0,Math.min(1,(offsetX*leadX+offsetY*leadY)/leadSquared)):0;
     const dx=offsetX-leadX*along,dy=offsetY-leadY*along,d=Math.hypot(dx,dy);
     alarm=Math.max(0,1-d/radius);const ease=alarm*alarm*(3-2*alarm);
-    // A shared frame produces two sides; divergent local normals made offshoots.
-    const normalX=-shapeY,normalY=shapeX;
+    // Local headings keep each stream coherent even after the group splits.
+    const flowX=found?vx/found:meanVX,flowY=found?vy/found:meanVY;
+    const groupSpeed=Math.hypot(flowX,flowY)||1,normalX=-flowY/groupSpeed,normalY=flowX/groupSpeed;
     if(alarm>.03){if(!p.evadeTime)p.evadeSide=dx*normalX+dy*normalY>=0?1:-1;p.evadeTime=.45}
     const side=p.evadeSide||(dx*normalX+dy*normalY>=0?1:-1);
-    // Follow a smooth bypass curve: open upstream, fly past, then close downstream.
-    // Velocity steering preserves forward travel instead of ejecting birds radially.
-    const longitudinal=dx*shapeX+dy*shapeY,lateral=dx*normalX+dy*normalY;
-    const clearance=radius*(intruder.down?.92:.78),bell=Math.exp(-longitudinal*longitudinal/(radius*radius));
-    const slope=Math.max(-.85,Math.min(.85,-2*longitudinal/(radius*radius)*side*clearance*bell));
-    const directionLength=Math.hypot(1,slope),desiredX=(shapeX+normalX*slope)/directionLength*2.1,desiredY=(shapeY+normalY*slope)/directionLength*2.1;
-    const outward=Math.max(0,clearance*bell-side*lateral)*side*.0018;
-    ax+=((desiredX-p.vx)*.18+normalX*outward)*ease;
-    ay+=((desiredY-p.vy)*.18+normalY*outward)*ease;
+    // Birds on each side peel away tangentially, preserving forward flight.
+    const split=ease*(intruder.down?.32:.22),radial=ease*.07;
+    ax+=normalX*side*split+dx/Math.max(d,1)*radial;
+    ay+=normalY*side*split+dy/Math.max(d,1)*radial;
    }
    // Relax global attraction after a scare; local neighbors still hold each stream.
    const stressTarget=alarm>.03?1:0;p.stress+=(stressTarget-p.stress)*(1-Math.exp(-dt*(stressTarget?12:.65)));
@@ -119,7 +107,7 @@ class Flock {
    let nextX=p.vx+p.ax*step,nextY=p.vy+p.ay*step;
    const heading=Math.atan2(p.vy,p.vx),desired=Math.atan2(nextY,nextX),delta=Math.atan2(Math.sin(desired-heading),Math.cos(desired-heading));
    const turnLimit=(.029+alarm*.035)*step,angle=heading+Math.max(-turnLimit,Math.min(turnLimit,delta));
-   const oldSpeed=Math.hypot(p.vx,p.vy),target=oldSpeed+((2.1+alarm*.25)-oldSpeed)*(1-Math.exp(-dt*2));
+   const oldSpeed=Math.hypot(p.vx,p.vy),target=oldSpeed+((2.1+alarm*.65)-oldSpeed)*(1-Math.exp(-dt*2));
    nextX=Math.cos(angle);nextY=Math.sin(angle);const speed=1;
    p.nx=nextX/speed*target;p.ny=nextY/speed*target;
   }
