@@ -8,6 +8,15 @@ let flock,pace=2.2,background;
 function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
+// Draw the visible parts of a short segment on both sides of a wrapping edge.
+function wrappedLine(x1,y1,x2,y2){
+ ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+ const shiftX=Math.min(x1,x2)<0?w:Math.max(x1,x2)>w?-w:0;
+ const shiftY=Math.min(y1,y2)<0?h:Math.max(y1,y2)>h?-h:0;
+ if(shiftX){ctx.moveTo(x1+shiftX,y1);ctx.lineTo(x2+shiftX,y2)}
+ if(shiftY){ctx.moveTo(x1,y1+shiftY);ctx.lineTo(x2,y2+shiftY)}
+ if(shiftX&&shiftY){ctx.moveTo(x1+shiftX,y1+shiftY);ctx.lineTo(x2+shiftX,y2+shiftY)}
+}
 function draw(dt){
  time+=dt;ctx.fillStyle='#080b11';ctx.fillRect(0,0,w,h);
  ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
@@ -26,7 +35,7 @@ function draw(dt){
   for(const p of particles){if(Math.min(3,Math.floor((p.a-.36)*8))!==band)continue;
    const x=p.px+(p.x-p.px)*alpha,y=p.py+(p.y-p.py)*alpha;
    const vx=p.pvx+(p.vx-p.pvx)*alpha,vy=p.pvy+(p.vy-p.pvy)*alpha,speed=Math.hypot(vx,vy)||1,len=1.6+speed*1.45;
-   ctx.moveTo(x,y);ctx.lineTo(x-vx/speed*len,y-vy/speed*len);
+   wrappedLine(x,y,x-vx/speed*len,y-vy/speed*len);
   }ctx.stroke();
  }
  // Faint 30 ms paths from actual past positions, not accumulated canvas blur.
@@ -34,10 +43,11 @@ function draw(dt){
  for(let segment=0;segment<3;segment++){
   ctx.strokeStyle=`rgba(205,222,240,${.08-segment*.025})`;ctx.lineWidth=.65;ctx.beginPath();
   for(const p of particles){
+   let startX=0,startY=0;
    for(let end=0;end<2;end++){
     const age=Math.min(7,1-alpha+(segment+end)*.01*60*pace),i=Math.floor(age),j=Math.min(7,i+1),mix=age-i;
     const x=p.history[i*2]+(p.history[j*2]-p.history[i*2])*mix,y=p.history[i*2+1]+(p.history[j*2+1]-p.history[i*2+1])*mix;
-    if(end)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+    if(end)wrappedLine(startX,startY,x,y);else{startX=x;startY=y}
    }
   }ctx.stroke();
  }
