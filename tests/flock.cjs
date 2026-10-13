@@ -63,3 +63,17 @@ test('boundary steering keeps a flock finite and contained on wide and narrow sc
   assert.ok(f.birds.every(p=>[p.x,p.y,p.vx,p.vy,...p.history].every(Number.isFinite)&&p.x>=2&&p.x<=w-2&&p.y>=2&&p.y<=h-2));
  }
 });
+test('a sparse bird finds neighbors beyond the ordinary local search radius',()=>{
+ const f=new Flock(1280,720,5,()=>.5);
+ f.birds.forEach((p,i)=>Object.assign(p,{x:i===0?400:510+i,y:350,vx:2.1,vy:0}));
+ f.step(1/60,{active:false});
+ assert.equal(f.birds[0].neighborCount,4);
+ assert.ok(f.birds[0].neighbors.slice(0,4).every(i=>i>0));
+});
+test('the group keeps its bank direction while crossing an edge danger zone',()=>{
+ const f=new Flock(1280,720,2,()=>.5);
+ f.birds.forEach((p,i)=>Object.assign(p,{x:1150,y:350+i*20,vx:2.1,vy:0}));
+ f.bankSide=1;f.step(1/60,{active:false});
+ assert.equal(f.bankSide,1);assert.ok(f.bank>0);
+ assert.ok(f.birds.every(p=>p.vy>0));
+});

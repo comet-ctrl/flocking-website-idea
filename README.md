@@ -64,6 +64,10 @@ Rendering interpolates between the last two physics poses, adding at most one ph
 
 After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. Predictive edge steering begins earlier and increases smoothly as birds approach the boundary. The default pace remains 1.8×.
 
+Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. Boundary look-ahead scales with the viewport, and birds sharing the group heading share its bank direction rather than peeling into opposing turns.
+
+This tuning was visually compared before publication using a 1280×720 preview and the reference video's 640×360 source (both 16:9), including a single pointer sweep. The video was played at normal speed; the site stayed at 1.8×. It is a qualitative comparison, not a frame-by-frame reproduction.
+
 ## Run locally
 
 No dependencies, backend, API keys, or build step are needed. Open `index.html` in a browser, or serve this directory with any static web server:
