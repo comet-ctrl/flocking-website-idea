@@ -141,16 +141,16 @@ class Flock{
    const p=b[i],speed=this.speeds[i];let ax=0,ay=0,az=0;
    for(let k=0;k<p.neighborCount;k++){
     const q=b[p.neighbors[k]],dx=q.x-p.x,dy=q.y-p.y,dz=q.z-p.z,d2=dx*dx+dy*dy+dz*dz;
-    if(d2<30*30&&d2>1e-8){const d=Math.sqrt(d2),push=(30-d)/30/d*.075;ax-=dx*push;ay-=dy*push;az-=dz*push}
+    if(d2<28*28&&d2>1e-8){const d=Math.sqrt(d2),push=(28-d)/28/d*.075;ax-=dx*push;ay-=dy*push;az-=dz*push}
    }
    // The closest seven coordinate flight; a broader finite community keeps
    // neighboring lobes connected without selecting a flock shape or path.
    let cohesionX=p.cohesionX*.00018,cohesionY=p.cohesionY*.00018,cohesionZ=p.cohesionZ*.00018;
    // Turn toward local companions without strongly braking the front into
-   // the tail. A modest longitudinal response lets trailing birds catch up.
+   // the tail. Retain enough longitudinal response for stragglers to catch up.
    const speedSquared=p.vx*p.vx+p.vy*p.vy+p.vz*p.vz;
    if(speedSquared>1e-9){
-    const along=(cohesionX*p.vx+cohesionY*p.vy+cohesionZ*p.vz)/speedSquared*.70;
+    const along=(cohesionX*p.vx+cohesionY*p.vy+cohesionZ*p.vz)/speedSquared*.65;
     cohesionX-=p.vx*along;cohesionY-=p.vy*along;cohesionZ-=p.vz*along;
    }
    ax+=cohesionX;ay+=cohesionY;az+=cohesionZ;
