@@ -1,13 +1,28 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const Flock=require('../flock.js');
-test('optimized search preserves the chosen version in sparse and dense flocks',()=>{
- const fixture=require('./behavior-76782d7.json'),crypto=require('node:crypto');
- for(const {count,sha256} of fixture.cases){let seed=fixture.seed;
-  const f=new Flock(1280,720,count,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
-  for(let i=0;i<fixture.ticks;i++)f.step(1/60,{active:i<60,x:620+i,y:330,vx:300,vy:0});
-  const data=f.birds.map(p=>[p.x,p.y,p.vx,p.vy].map(v=>Math.round(v*1e8)));
-  assert.equal(crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex'),sha256);
+test('optimized neighbor search agrees with an exhaustive search in sparse and dense flocks',()=>{
+ let seed=19;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
+ const cases=[
+  Array.from({length:350},()=>({x:180+random()*850,y:120+random()*480})),
+  Array.from({length:350},()=>({x:600+random()*90,y:320+random()*90})),
+  // Equal-distance ties, exact radius boundaries, and almost-adjacent grid cells.
+  [{x:640,y:352},...[[-64,0],[64,0],[0,-64],[0,64],[-160,0],[160,0],[0,-160],[0,160],[64.0001,0],[160.0001,0],[-.0001,-.0001],[.0001,.0001]].map(([dx,dy])=>({x:640+dx,y:352+dy}))]
+ ];
+ for(const positions of cases){
+  const f=new Flock(1280,720,positions.length,random);
+  f.birds.forEach((p,i)=>Object.assign(p,positions[i]));
+  for(let tick=0;tick<7;tick++){
+   const refresh=f.neighborTick%3===0,snapshot=f.birds.map(({x,y})=>({x,y}));
+   f.step(1/60,{active:false});
+   if(!refresh)continue;
+   f.birds.forEach((p,i)=>{
+    const origin=snapshot[i],all=snapshot.map((q,j)=>({j,q,d2:(q.x-origin.x)**2+(q.y-origin.y)**2})).filter(q=>q.j!==i);
+    const nearby=all.filter(q=>q.d2<=64*64),radius=nearby.length<4?160:64;
+    const expected=all.filter(q=>q.d2<=radius*radius).sort((a,b)=>a.d2-b.d2||Math.floor(a.q.y/64)-Math.floor(b.q.y/64)||Math.floor(a.q.x/64)-Math.floor(b.q.x/64)||a.j-b.j).slice(0,7).map(q=>q.j);
+    assert.deepEqual(Array.from(p.neighbors.slice(0,p.neighborCount)),expected,`bird ${i}, tick ${tick}`);
+   });
+  }
  }
 });
 
@@ -38,13 +53,13 @@ test('birds retain their chosen side while an intruder crosses their heading',()
  for(let i=0;i<30;i++)f.step(1/60,{active:false});
  assert.equal(p.evadeTime,0);
 });
-test('fixed-step flock remains identical at 30, 60 and 120 Hz',()=>{
- function run(hz){let seed=1;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
+test('fixed-step flock remains identical at 30, 60 and 120 Hz at both supported fast speeds',()=>{
+ function run(hz,pace){let seed=1;const random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
   const f=new Flock(1200,800,100,random);
-  for(let i=0;i<hz*2;i++)f.advance(1/hz,{active:true,x:600,y:400,vx:500,vy:100},1.8);
+  for(let i=0;i<hz*2;i++)f.advance(1/hz,{active:true,x:600,y:400,vx:500,vy:100},pace);
   return f.birds.map(p=>[p.x,p.y,p.vx,p.vy]);
  }
- assert.deepEqual(run(30),run(60));assert.deepEqual(run(120),run(60));
+ for(const pace of [1.8,2.2]){const expected=run(60,pace);assert.deepEqual(run(30,pace),expected);assert.deepEqual(run(120,pace),expected)}
 });
 test('render interpolation stays between consecutive poses without changing physics',()=>{
  const f=new Flock(1200,800,1,()=>.5),p=f.birds[0];
@@ -65,7 +80,7 @@ test('regrouping recovers gradually after the intruder leaves',()=>{
  for(let i=0;i<300;i++)f.step(1/60,{active:false});
  assert.ok(p.stress<.05);
 });
-test('free-space flock remains finite with wide and narrow viewport scales',()=>{
+test('flock remains finite with wide and narrow viewport scales',()=>{
  for(const [w,h] of [[1600,900],[390,844]]){
   const f=new Flock(w,h,100,()=>.5);
   for(let i=0;i<900;i++)f.advance(1/60,{active:i<300,x:w*.6,y:h*.5,vx:400,vy:0},2.2);
@@ -79,17 +94,24 @@ test('a sparse bird finds neighbors beyond the ordinary local search radius',()=
  assert.equal(f.birds[0].neighborCount,4);
  assert.ok(f.birds[0].neighbors.slice(0,4).every(i=>i>0));
 });
-test('free-space flight and mouse avoidance are invariant under camera translation',()=>{
- const a=new Flock(1280,720,50,()=>.5),b=new Flock(1280,720,50,()=>.5);
- for(const p of b.birds){p.x+=5000;p.y-=3000}
- for(let i=0;i<120;i++){
-  a.step(1/60,{active:true,x:630,y:360,vx:200,vy:0});
-  b.step(1/60,{active:true,x:5630,y:-2640,vx:200,vy:0});
+test('flock travels and banks inside a stationary wide or narrow viewport',()=>{
+ for(const [w,h] of [[1280,720],[390,844]]){
+  let seed=23;const f=new Flock(w,h,150,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+  const center=()=>[f.birds.reduce((s,p)=>s+p.x,0)/150,f.birds.reduce((s,p)=>s+p.y,0)/150];
+  const initial=center();let distance=0,headingChange=0;
+  for(let tick=0;tick<300;tick++){
+   f.advance(1/60,{active:false},2.2);
+   const [cx,cy]=center();distance=Math.max(distance,Math.hypot(cx-initial[0],cy-initial[1]));
+   const heading=Math.atan2(f.birds.reduce((s,p)=>s+p.vy,0),f.birds.reduce((s,p)=>s+p.vx,0));
+   headingChange=Math.max(headingChange,Math.abs(Math.atan2(Math.sin(heading+.2),Math.cos(heading+.2))));
+   assert.ok(f.birds.every(p=>p.x>=2&&p.x<=w-2&&p.y>=2&&p.y<=h-2));
+  }
+  assert.ok(distance>Math.min(w,h)*.12,`flock did not travel: ${distance}`);
+  assert.ok(headingChange>Math.PI/6,`flock did not bank: ${headingChange}`);
  }
- a.birds.forEach((p,i)=>{assert.ok(Math.abs(b.birds[i].x-p.x-5000)<1e-6);assert.ok(Math.abs(b.birds[i].y-p.y+3000)<1e-6)});
 });
 test('birds on opposite sides peel apart while maintaining forward flight',()=>{
- function sample(active){const f=new Flock(1280,720,2,()=>.5);f.shapeAngle=0;
+ function sample(active){const f=new Flock(1280,720,2,()=>.5);
   f.birds.forEach((p,i)=>Object.assign(p,{x:580,y:360+(i?18:-18),vx:2.1,vy:0}));
   for(let i=0;i<8;i++)f.step(1/60,{active,x:620,y:360,vx:0,vy:0});
   return f.birds;
@@ -98,7 +120,21 @@ test('birds on opposite sides peel apart while maintaining forward flight',()=>{
  assert.ok(split[0].vy<quiet[0].vy);assert.ok(split[1].vy>quiet[1].vy);
  assert.ok(split.every(p=>p.vx>1.9));
 });
-test('a centered mouse pass leaves very few isolated birds',()=>{
+test('an intruder changes nearby birds before its turn propagates through the flock',()=>{
+ function setup(){
+  let seed=37;const f=new Flock(1280,720,100,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
+  f.birds.forEach((p,i)=>Object.assign(p,{x:(i<50?300:850)+(i%10)*5,y:330+Math.floor((i%50)/10)*5,vx:2.1,vy:0}));
+  return f;
+ }
+ const quiet=setup(),alarmed=setup();
+ quiet.step(1/60,{active:false});alarmed.step(1/60,{active:true,x:335,y:340,vx:0,vy:0});
+ assert.ok(alarmed.birds.slice(0,50).some((p,i)=>Math.hypot(p.vx-quiet.birds[i].vx,p.vy-quiet.birds[i].vy)>.001));
+ alarmed.birds.slice(50).forEach((p,i)=>{
+  assert.equal(p.vx,quiet.birds[i+50].vx);assert.equal(p.vy,quiet.birds[i+50].vy);
+ });
+});
+
+test('a centered mouse pass keeps at least 99% of birds connected',()=>{
  let seed=7;const n=1400,f=new Flock(1280,720,n,()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296));
  for(let k=0;k<300;k++){
   const cx=f.birds.reduce((sum,p)=>sum+p.x,0)/n,cy=f.birds.reduce((sum,p)=>sum+p.y,0)/n,t=k/60;
@@ -109,5 +145,6 @@ test('a centered mouse pass leaves very few isolated birds',()=>{
   for(let j=0;j<n&&neighbors<3;j++)if(i!==j&&Math.hypot(f.birds[i].x-f.birds[j].x,f.birds[i].y-f.birds[j].y)<40)neighbors++;
   if(neighbors<3)loose++;
  }
- assert.ok(loose<=3,`isolated birds after pass: ${loose}`);
+ // Local flocking allows a few stragglers; do not force every bird into a ribbon.
+ assert.ok(loose/n<=.01,`isolated birds after pass: ${loose}/${n}`);
 });

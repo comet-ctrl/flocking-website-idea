@@ -2,10 +2,10 @@ const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 let w=innerWidth,h=innerHeight,dpr=1,particles=[],paused=false,demo=false,hidden=false,last=0,time=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const mouse={x:w*.72,y:h*.65,tx:w*.72,ty:h*.65,vx:0,vy:0,angle:.45,active:false,down:false};
-let tail=[],cameraX=0,cameraY=0;
+let tail=[];
 function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);background=ctx.createRadialGradient(w*.45,h*.45,0,w*.45,h*.45,w*.7);background.addColorStop(0,'#101823');background.addColorStop(1,'#080b11');seed()}
 let flock,pace=2.2,background;
-function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[];cameraX=0;cameraY=0}
+function seed(){flock=new Flock(w,h,Math.min(3200,Math.max(1100,Math.floor(w*h/330))));particles=flock.birds;tail=[]}
 function move(e){mouse.tx=e.clientX;mouse.ty=e.clientY;mouse.active=true;if(paused)draw(0)}
 canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerdown',e=>{move(e);mouse.down=true;canvas.setPointerCapture(e.pointerId)});window.addEventListener('pointerup',()=>mouse.down=false);canvas.addEventListener('pointercancel',()=>mouse.down=false);canvas.addEventListener('pointerleave',()=>{if(!mouse.down)mouse.active=false});window.addEventListener('blur',()=>{mouse.down=false;mouse.active=false});
 function draw(dt){
@@ -17,13 +17,8 @@ function draw(dt){
  // velocity so a sudden pointer jump cannot project danger across the screen.
  if(dt>0){const gain=1-Math.exp(-dt*18),rawX=dx*blend/dt,rawY=dy*blend/dt,cap=Math.min(1,1400/(Math.hypot(rawX,rawY)||1));mouse.vx+=(rawX*cap-mouse.vx)*gain;mouse.vy+=(rawY*cap-mouse.vy)*gain}else{mouse.vx=0;mouse.vy=0}
  if(Math.hypot(dx,dy)>.2){const target=Math.atan2(dy,dx);mouse.angle+=Math.atan2(Math.sin(target-mouse.angle),Math.cos(target-mouse.angle))*.22}
- if(dt)flock.advance(dt,{...mouse,x:mouse.x+cameraX,y:mouse.y+cameraY,active:mouse.active||demo},pace);
- // Follow free flight gently; mouse interaction remains anchored to screen space.
- let centerX=0,centerY=0;for(const p of particles){centerX+=p.x;centerY+=p.y}
- centerX/=particles.length;centerY/=particles.length;
- const cameraBlend=1-Math.exp(-dt*1.8);
- cameraX+=(centerX-w*.5-cameraX)*cameraBlend;cameraY+=(centerY-h*.48-cameraY)*cameraBlend;
- ctx.save();ctx.translate(-cameraX,-cameraY);
+ // A fixed view keeps the flock's forward flight visible.
+ if(dt)flock.advance(dt,{...mouse,active:mouse.active||demo},pace);
  // Blend physics poses and batch similar silver strokes into four draw calls.
  const alpha=flock.renderAlpha;
  for(let band=0;band<4;band++){
@@ -46,7 +41,6 @@ function draw(dt){
    }
   }ctx.stroke();
  }
- ctx.restore();
  if(dt||!tail.length){tail.unshift({x:mouse.x,y:mouse.y});if(tail.length>48)tail.pop()}
  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#ff4169';ctx.shadowBlur=12;
  for(let i=tail.length-1;i>0;i--){ctx.strokeStyle=`rgba(255,78,114,${(1-i/tail.length)*.52})`;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(tail[i].x,tail[i].y);ctx.lineTo(tail[i-1].x,tail[i-1].y);ctx.stroke()}

@@ -20,22 +20,24 @@ Every bird stores its position and velocity. The browser repeats a simulation st
 2. **Separate.** Birds steer away from neighbors that are too close, leaving space within the dense flock.
 3. **Align.** Birds gradually match their neighbors' velocities, making turns spread through the group.
 4. **Stay together.** Local cohesion draws birds toward their neighbors. A gentle whole-flock centering and alignment term helps disconnected pieces regroup.
-5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Birds use the same slowly changing flock orientation to choose two sides. A curved bypass steers their velocity outward before the obstacle and inward after it, preserving forward flight instead of ejecting them radially. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer widens the opening. The forward extension fades as the arrow stops.
-6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. A slowly varying shared bank initiates broad turns in open space.
+5. **Anticipate the intruder.** The arrow's smoothed velocity extends its danger zone up to 0.22 seconds ahead, with a distance cap to keep sudden mouse jumps local. Nearby birds turn away using their neighbors' direction of flight, so each part of the flock can respond locally. Each bird remembers its chosen side until it has been clear of danger for 0.45 simulation seconds, reducing left/right jitter. Holding the pointer widens the opening. The forward extension fades as the arrow stops.
+6. **Smooth the turn.** Steering acceleration is eased, speed changes gradually, and angular changes are limited. Early look-ahead starts a gentle group bank near the viewport edges. Individual birds take the shorter turn toward the interior, rather than being forced to turn to the same side at an edge.
 7. **Draw.** Each bird is a short silver stroke oriented along its velocity. The normal canvas cursor is hidden; a separate glowing red arrow and fading trail follow the pointer.
 
 Conceptually:
 
 ```text
 steering = separation + neighbor alignment + local cohesion
-         + gentle group cohesion + density shaping + shared banking + mouse avoidance
+         + gentle group cohesion + edge banking + local mouse avoidance
 
 acceleration = ease(previous acceleration, steering)
 velocity = turn gradually toward velocity + acceleration
 position = position + velocity * elapsed time
 ```
 
-This is an artistic boids-style model, not a scientifically exact starling simulation. A soft density envelope maintains an elongated body and gently bends it; these are explicit artistic forces layered on local flocking, not claims about the original video algorithm. Birds have no assigned tracks or positions. A following camera replaces screen walls. At normal settings, the prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
+The current movement restores the earlier local flocking foundation from commit `1252c60`, with improved edge turns and the faster neighbor search. Turns and splits develop through separation, alignment, and cohesion. The density envelope, shared Gaussian bypass curve, and following camera have been removed. The view stays fixed, so the flock visibly travels across the screen.
+
+This is an artistic boids-style model, not a scientifically exact starling simulation or a claim about the reference video's algorithm. Birds have no assigned tracks or positions. The prototype renders roughly 1,100–3,200 birds depending on viewport area. Performance depends on the device and flock density; there is no fixed frame-rate guarantee.
 
 ## Controls
 
@@ -54,23 +56,17 @@ The animation starts paused when the browser reports a reduced-motion preference
 
 ## Speed and performance
 
-The default is **2.2×**: about **277 world-space pixels per second** in calm flight, compared with the old 126. Apparent screen movement also depends on the following camera. This is a visual tuning choice after reviewing the reference at normal playback speed, not an exact measurement of its particles. Use 1.8× to return to the previous pace, or 1.5× for a calmer background.
+The default is **2.2×**: about **277 CSS pixels per second** in calm flight, compared with about 126 at 1×. The fixed view makes this forward movement visible. This is a visual tuning choice, not an exact measurement of the reference video's particles. Use 1.8× for the previous pace, or 1.5× for a calmer background.
 
 The speed control advances the whole simulation faster, preserving the relationship between flight, turning, and avoidance. Physics runs in fixed 1/60-second steps, so ordinary 30, 60, and 120 Hz rendering follows the same simulation timing. Long stalls are capped to avoid excessive catch-up work.
 
-Neighbor search uses smaller 16-pixel cells, searches nearby cells first, and skips cells that cannot contain a closer candidate. The original 64/160-pixel search radii, nearest-seven results, tie ordering, forces, and 1/60-second physics steps are preserved. Regression fixtures from commit `76782d7` check the resulting trajectories for sparse and dense flocks.
+Neighbor search uses 16-pixel cells, searches nearby cells first, and skips cells that cannot contain a closer candidate. Each bird still gets its actual seven nearest neighbors within 64 pixels. Birds with fewer than four nearby neighbors extend their search to 160 pixels to reconnect with the flock. This reduces search work without approximating the selected neighbors or reducing the population.
 
 Neighbor lists are refreshed every three physics steps, while steering and mouse avoidance are recalculated every step. The background gradient is cached, and hidden tabs skip animation work. These reduce overhead without reducing the flock population.
 
 Rendering interpolates between the last two physics poses, adding at most one physics step of visual delay. Silver particles share four brightness/thickness groups, reducing their body drawing to four strokes per frame. Three faint trail strokes show approximately 30 milliseconds of position history without accumulating a blurred canvas. At a constant speed setting, trail duration is independent of display refresh rate.
 
-After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A gently following camera keeps the group in view without wall-driven loops. The default pace is now 2.2×.
-
-Formation tuning strengthens local heading agreement and reduces compression along each stream's length. Birds with fewer than four neighbors extend their search to 160 pixels to reconnect with nearby groups. During a scare, global attraction now retains at least 65% of its normal strength; sideways avoidance is gentler. The body starts wider, and density pressure resists collapse into a compact knot while allowing local splitting. Shorter, brighter marks and subdued trails keep individual particles readable.
-
-Loose tips outside the main body's length or width receive a gradual inward correction and stronger heading alignment. Sparse or frightened birds are excluded from outward length expansion. The intruder's extra speed boost is reduced to limit birds racing ahead of their stream. These changes reduce offshoots without hiding or deleting birds.
-
-This tuning was visually compared before publication using a 1280×720 preview and the reference video's 640×360 source (both 16:9), including a single pointer sweep. The video was played at normal speed; the site stayed at 1.8×. It is a qualitative comparison, not a frame-by-frame reproduction.
+After an encounter, whole-flock attraction eases back over time while local alignment keeps each stream organized. A few natural stragglers are allowed; birds are not pulled back onto a prescribed ribbon.
 
 ## Run locally
 
@@ -83,6 +79,10 @@ python -m http.server 8000
 Then visit `http://localhost:8000`.
 
 Run the simulation regression checks with `node --test tests/flock.cjs`.
+
+The checks compare the optimized nearest-seven search with an exhaustive all-pairs search in sparse and dense flocks, including distance ties and cell boundaries. They also verify matching simulation results at 30, 60, and 120 Hz at both 1.8× and 2.2×, local mouse response, anticipation, interpolation, and stable travel and banking in wide and narrow viewports.
+
+The density criterion for the standard mouse-pass scenario is that at least 99% of birds retain three or more neighbors within 40 pixels. This checks that the main flock stays connected while allowing a few natural stragglers. These checks catch simulation regressions; visual comparison is still needed to judge whether the movement resembles the reference.
 
 ## Files
 
@@ -111,5 +111,3 @@ Possible next steps:
 - [Steve's Site: interactive murmuration](https://stevessite.com/murmuration.html).
 
 External examples are references only. Their code, video footage, screenshots, and other assets are not included in this repository.
-
-Performance check: a local Node benchmark with 2,800 birds measured about 20.5 ms/frame for the old search at 1.8× versus 7.6 ms/frame for the optimized search at 2.2×. These timings cover simulation only, not browser rendering, and vary by device and flock shape. Particle count and rendering quality are unchanged.
