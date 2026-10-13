@@ -23,7 +23,7 @@ The model has no flock-wide heading, target silhouette, assigned route, fixed sp
 
 ## Speed, drawing, and performance
 
-The default speed remains **2.2×**. The simulation runs in fixed 1/60-second steps, and the speed control changes how much simulation time passes. The cruising target is about 277 world units per real second at 2.2×. Apparent screen speed varies with depth motion, turns, and avoidance. Long stalls and queued work are capped to prevent excessive catch-up work. On devices that cannot keep up, simulation time is dropped rather than allowing an ever-growing input delay.
+The speed is fixed at **2.2×**. The simulation runs in fixed 1/60-second steps. The cruising target is about 277 world units per real second at 2.2×. Apparent screen speed varies with depth motion, turns, and avoidance. Long stalls and queued work are capped to prevent excessive catch-up work. On devices that cannot keep up, simulation time is dropped rather than allowing an ever-growing input delay.
 
 The population is capped at 1,100–2,200 birds according to viewport area. Neighbor lists and their angular links refresh every three physics steps. Each bird's cohesion refreshes every six steps, spread across six interleaved groups to reduce frame-time spikes. A separate coarse 3D grid calculates exact distance-weighted attraction from cell summaries; only cells intersecting the perception boundary need individual bird checks. Typed arrays and cached cell centers reduce allocations and repeated arithmetic.
 
@@ -31,7 +31,7 @@ On a served website, a Web Worker runs the physics separately from mouse handlin
 
 Each bird is a tapered silver stroke with a fine white tip, stable brightness variation, and a depth-dependent length. Poses are calculated once and reused for batched drawing. A quarter-resolution light layer adds a soft halo without per-bird shadow blur, and a faint wake follows actual position history. The arrow has a thin fading shaft and a short trail whose lifetime is measured in seconds. The background gradient is cached, and hidden tabs stop requesting simulation time.
 
-Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS. A lower speed setting remains available for less powerful devices.
+Performance depends on device, density, and viewport size; this is not a guarantee of 60 FPS.
 
 ## Controls
 
@@ -39,29 +39,18 @@ Performance depends on device, density, and viewport size; this is not a guarant
 | --- | --- |
 | Move mouse / drag a finger | Move the red intruder |
 | Hold mouse / touch | Stronger avoidance |
-| Speed | 1×, 1.5×, 1.8×, or 2.2× (default) |
-| Demo intruder | Automatic arrow motion while the pointer is outside the canvas |
-| Space or Pause | Pause/resume |
-| H | Reveal the quiet interface or toggle manual hiding |
-| Reset | Recreate the flock |
-| Fullscreen | Fill the display where supported |
-| Visuals | Open five independent visual experiments |
-| Original look | Switch all experiments off without restarting the flock |
-| Escape | Close the visual experiments panel |
+| Space | Pause/resume |
 
-The interface fades after three seconds, leaving the flock unobstructed. Move near the bottom edge, press H or Tab, or touch the canvas to reveal it. Focused or hovered controls and an open Visuals panel stay visible. The animation starts paused and the interface remains visible if the browser reports a reduced-motion preference.
+The canvas fills the viewport with no on-screen buttons or panels. It can receive keyboard focus with Tab. The animation starts paused if the browser reports a reduced-motion preference; press Space to start it.
 
-## Visual experiments
+## Permanent visual details
 
-All five experiments start **off** on a first visit. Each button switches only its own effect, so you can compare them individually or combine them. Choices are saved in this browser when local storage is available. **Original look** restores the accepted silver rendering without resetting the birds or changing the speed. Pausing lets you compare effects on the same frame.
+Two visual details are always present over the silver rendering:
 
-- **Banking highlights:** changes in heading catch extra white light along the bird's body. The light is eased over time so it travels with turns.
 - **Red light spill:** nearby birds pick up a rose tint that fades with distance from the arrow.
-- **Stronger depth:** distant birds become smaller and dimmer, while nearer ones show longer bright tips.
 - **Subtle wing shapes:** a fixed subset of nearby birds gains tiny curved wings, drawn in one batch.
-- **Film grain:** a very faint, cached noise texture overlays the scene; it creates no new particles.
 
-These are drawing changes only. They do not alter positions, flock rules, bird count, or the 2.2× default. Disabled effects skip their drawing work. The buttons remain available while the effects are being evaluated; an approved effect can later become permanent and have its button removed.
+These details change only the drawing. They do not alter positions, flock rules, bird count, or the fixed 2.2× speed. There are no experimental effect settings or saved visual preferences.
 
 ## The website idea
 
@@ -71,8 +60,8 @@ This repository contains the full-screen interaction prototype. Portfolio conten
 
 ## Files and local use
 
-- `index.html`: page layout, styles, canvas, and controls.
-- `app.js`: drawing, interpolation, mouse input, animation timing, and controls.
+- `index.html`: viewport layout, styles, and accessible canvas.
+- `app.js`: drawing, interpolation, pointer and keyboard input, and animation timing.
 - `flock.js`: bird physics, 3D neighbor searches, local attraction, and boundary handling.
 - `flock-runner.js`: worker scheduling, rendering snapshots, and the synchronous fallback.
 - `flock-worker.js`: runs the same physics away from the browser's main thread.
